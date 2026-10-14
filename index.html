@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Pulau Balok</title>
+<meta name="theme-color" content="#7cc8f5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pulau Balok">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+@font-face{font-family:"Baloo 2";src:url(fonts/baloo-2-latin-600-normal.woff2) format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Baloo 2";src:url(fonts/baloo-2-latin-800-normal.woff2) format("woff2");font-weight:800;font-display:swap}
+/* Satu tampilan cerah yang disengaja (dunia permainan), tidak ikut mode gelap. */
+:root{
+  --sky:#7cc8f5; --ink:#1d2b53; --ink-soft:#4a5680; --paper:#ffffff; --paper-2:#eef6fd;
+  --sun:#ffc93c; --sun-deep:#e0a400; --leaf:#3fb25a; --leaf-deep:#2a8a43; --berry:#e8434b;
+  --font:"Baloo 2","Nunito","Arial Rounded MT Bold",ui-rounded,system-ui,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--sky);color:var(--ink);font-family:var(--font);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+button{font-family:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
+button:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+[hidden]{display:none!important}
+
+/* ---------- tombol tebal ---------- */
+.chunky{border:0;border-radius:22px;background:var(--paper);box-shadow:0 6px 0 #b9cde0,0 10px 18px rgba(29,43,83,.18);font-weight:800;transition:transform .08s}
+.chunky:active{transform:translateY(4px);box-shadow:0 2px 0 #b9cde0,0 4px 10px rgba(29,43,83,.18)}
+.chunky.sun{background:var(--sun);box-shadow:0 6px 0 var(--sun-deep),0 10px 18px rgba(29,43,83,.2)}
+.chunky.sun:active{box-shadow:0 2px 0 var(--sun-deep)}
+.chunky.leaf{background:var(--leaf);color:#fff;box-shadow:0 6px 0 var(--leaf-deep),0 10px 18px rgba(29,43,83,.2)}
+.chunky.leaf:active{box-shadow:0 2px 0 var(--leaf-deep)}
+.ico{width:58px;height:58px;display:grid;place-items:center;padding:0}
+.ico svg{width:32px;height:32px}
+
+/* ---------- HUD ---------- */
+#hud{position:fixed;inset:0;pointer-events:none}
+#hud > *{pointer-events:auto}
+#hud > .foot{pointer-events:none} /* baris bawah transparan tidak boleh menutupi joystick kanan */
+.foot .rightCol{pointer-events:none}.foot .rightCol > *{pointer-events:auto}
+.tl{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));left:max(14px,env(safe-area-inset-left,0px));display:flex;gap:12px}
+.tr{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:max(14px,env(safe-area-inset-right,0px));display:flex;gap:12px;align-items:center}
+#stars{height:58px;padding:0 18px 0 12px;display:flex;align-items:center;gap:6px;font-size:28px;font-variant-numeric:tabular-nums;pointer-events:none}
+#stars svg{width:34px;height:34px}
+#parentBtn{width:44px;height:44px;border-radius:14px;opacity:.85}
+#parentBtn svg{width:22px;height:22px}
+.foot{position:absolute;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom,0px));padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));display:flex;align-items:flex-end;gap:12px;pointer-events:none}
+.foot > *{pointer-events:auto}
+.foot .mid{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:12px;pointer-events:none}
+.foot .mid > *{pointer-events:auto}
+#jumpBtn,#exitBtn{width:76px;height:76px;border-radius:26px;display:grid;place-items:center;flex:none}
+#jumpBtn{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#jumpBtn svg,#exitBtn svg{width:40px;height:40px}
+#mapPins{position:absolute;inset:0}
+#bubble{pointer-events:none!important;max-width:560px;width:100%;background:var(--paper);border-radius:22px;padding:10px 16px 12px 16px;box-shadow:0 10px 24px rgba(29,43,83,.22);display:flex;gap:10px;align-items:flex-start}
+#bubble .who{font-size:14px;font-weight:800;color:var(--leaf-deep);letter-spacing:.04em;text-transform:uppercase}
+#bubbleText{font-size:clamp(17px,2.6vw,22px);line-height:1.25;font-weight:600;text-wrap:balance}
+#bubble .txt{flex:1;min-width:0}
+#repeatBtn{pointer-events:auto;width:46px;height:46px;border-radius:16px;flex:none;box-shadow:0 4px 0 #b9cde0}
+#repeatBtn svg{width:26px;height:26px}
+#actionBtn{font-size:30px;padding:6px 34px 8px;border-radius:24px}
+
+/* ---------- layar ---------- */
+.screen{position:fixed;inset:0;display:grid;place-items:center;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#start{background:linear-gradient(180deg,rgba(124,200,245,0) 30%,rgba(29,43,83,.35))}
+.titleCard{display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center}
+.logo{font-weight:800;font-size:clamp(56px,13vw,112px);line-height:.9;color:#fff;letter-spacing:-.01em;text-shadow:0 5px 0 var(--ink),0 10px 0 rgba(29,43,83,.25)}
+.logo span{color:var(--sun)}
+.tag{font-size:clamp(18px,3vw,24px);font-weight:600;color:#fff;text-shadow:0 2px 0 rgba(29,43,83,.6)}
+#playBtn{font-size:clamp(34px,6vw,46px);padding:10px 56px 14px;border-radius:30px;display:flex;align-items:center;gap:14px}
+#playBtn svg{width:40px;height:40px}
+.startRow{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.startRow .chunky{font-size:20px;padding:10px 20px;display:flex;align-items:center;gap:8px}
+.startRow svg{width:26px;height:26px}
+
+.card{background:var(--paper);border-radius:28px;box-shadow:0 18px 50px rgba(29,43,83,.35);padding:22px;max-width:520px;width:100%;max-height:calc(100% - 8px);overflow:auto}
+.card h2{margin:0 0 6px;font-size:30px;line-height:1.1;text-wrap:balance}
+.card p{margin:0 0 14px;font-size:20px;line-height:1.35;font-weight:600;color:var(--ink-soft)}
+.dim{background:rgba(29,43,83,.45)}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row .chunky{font-size:22px;padding:8px 22px 10px}
+
+/* bersama */
+.together .badge{display:inline-flex;align-items:center;gap:8px;background:#ffe7a6;color:#7a5200;border-radius:999px;padding:4px 14px;font-weight:800;font-size:15px;letter-spacing:.04em;text-transform:uppercase;margin-bottom:10px}
+.together p.big{font-size:26px;color:var(--ink);line-height:1.25}
+
+/* hadiah */
+.reward{text-align:center;background:transparent;box-shadow:none}
+.reward h2{color:#fff;font-size:44px;text-shadow:0 4px 0 var(--ink)}
+.reward p{color:#fff;font-size:26px;text-shadow:0 2px 0 var(--ink)}
+
+/* lemari baju */
+#wardrobe{position:fixed;left:0;right:0;bottom:0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center;pointer-events:none}
+#wardrobe .card{pointer-events:auto;max-width:640px;padding:16px 18px}
+@media (max-height:520px){#wardrobe{top:0;align-items:center;justify-content:flex-end;padding-top:8px;padding-bottom:8px}#wardrobe .card{max-width:min(50vw,480px);max-height:calc(100vh - 16px);overflow:auto;padding:10px 12px}}
+@media (max-width:560px) and (min-height:521px){#wardrobe .card{max-height:42vh;overflow:auto;padding:10px 12px}}
+.tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.tabs button{border:0;background:var(--paper-2);border-radius:16px;padding:6px 16px;font-size:20px;font-weight:800}
+.tabs button[aria-selected="true"]{background:var(--ink);color:#fff}
+.swatches{display:flex;gap:12px;flex-wrap:wrap}
+.sw{width:60px;height:60px;border-radius:50%;border:4px solid #fff;box-shadow:0 0 0 3px #cfdceb;padding:0}
+.sw[aria-pressed="true"]{box-shadow:0 0 0 5px var(--ink)}
+.hat{border:0;border-radius:18px;background:var(--paper-2);padding:8px 14px;font-size:18px;font-weight:800;display:flex;align-items:center;gap:8px}
+.hat[aria-pressed="true"]{background:var(--ink);color:#fff}
+.hat:disabled{opacity:.45}
+.hat svg{width:20px;height:20px}
+.wfoot{display:flex;justify-content:flex-end;margin-top:14px}
+.wfoot .chunky{font-size:24px;padding:6px 26px 8px}
+
+/* orang tua */
+#parent .card{max-width:640px}
+#parent h3{margin:18px 0 8px;font-size:20px}
+.ptable{width:100%;border-collapse:collapse;font-size:16px;font-variant-numeric:tabular-nums}
+.ptable th{text-align:left;font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);padding:4px 6px}
+.ptable td{padding:8px 6px;border-top:1px solid #e3ecf5;font-weight:600}
+.tablewrap{overflow-x:auto}
+.set{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #e3ecf5;font-size:17px;font-weight:600}
+.set select{font:inherit;font-size:17px;padding:4px 8px;border-radius:10px;border:2px solid #cfdceb;background:#fff;color:var(--ink)}
+.toggle{border:0;border-radius:999px;padding:4px 14px;font-weight:800;background:var(--paper-2)}
+.toggle[aria-pressed="true"]{background:var(--leaf);color:#fff}
+.qr{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.qr .box{width:150px;height:150px;background:#fff;border-radius:12px;border:2px solid #e3ecf5;padding:6px}
+.qr .box svg{width:100%;height:100%}
+.qr code{font-size:17px;font-weight:800;background:var(--paper-2);padding:4px 8px;border-radius:8px;word-break:break-all}
+.note{font-size:15px;color:var(--ink-soft);font-weight:600;line-height:1.4}
+.fam select,.inlineSel{font:inherit;font-size:15px;padding:2px 4px;border-radius:8px;border:2px solid #cfdceb;background:#fff;color:var(--ink);max-width:150px}
+.fam .del{border:0;background:#ffe1e1;border-radius:10px;padding:2px 8px;font-size:15px}
+.fam .del:disabled{opacity:.3}
+.role{display:inline-block;background:#ffe7a6;color:#7a5200;border-radius:999px;padding:0 6px;font-size:12px;font-weight:800;margin-left:4px}
+.research li{margin-bottom:6px;font-size:15px;line-height:1.4;font-weight:600;color:var(--ink-soft)}
+.research b{color:var(--ink)}
+.closeX{float:right;width:46px;height:46px;border-radius:16px}
+.danger{background:#ffe1e1!important;box-shadow:0 5px 0 #f0b0b0!important}
+
+/* gerbang orang tua */
+.gate .q{font-size:30px;font-weight:800;margin:6px 0 14px}
+.gate .ans{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.gate .ans button{font-size:26px;padding:8px 0}
+
+/* istirahat */
+#rest .card{text-align:center}
+#rest .moon{width:110px;height:110px;margin:0 auto 6px}
+
+/* joystick */
+#joy{width:136px;height:136px;flex:none;border-radius:50%;position:relative;touch-action:none;background:rgba(255,255,255,.28);border:4px solid rgba(255,255,255,.75);box-shadow:0 8px 20px rgba(29,43,83,.18);backdrop-filter:blur(2px)}
+#joy.on{background:rgba(255,255,255,.4)}
+#joy.floating{position:fixed;transform:translate(-50%,-50%);z-index:6;opacity:.95}
+#joyZone{position:fixed;left:0;top:90px;bottom:0;width:45%;display:none;touch-action:none;z-index:0}
+@media (hover:none) and (pointer:coarse){#joyZone{display:block}#joy:not(.on){opacity:.55}}
+/* kontrol kanan: putar pandangan (kamera), seperti joystick kiri */
+#lookZone{position:fixed;right:0;top:90px;bottom:0;width:45%;display:none;touch-action:none;z-index:0}
+#look{position:fixed;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));width:136px;height:136px;border-radius:50%;display:none;touch-action:none;pointer-events:auto;z-index:2;background:rgba(255,255,255,.22);border:4px solid rgba(255,255,255,.7);box-shadow:0 8px 20px rgba(29,43,83,.18);opacity:.55}
+#look.on{opacity:.95;background:rgba(255,255,255,.4)}
+#look.floating{right:auto;margin:0;transform:translate(-50%,-50%);z-index:6}
+#lookKnob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:#7cc8f5;box-shadow:0 5px 0 #3a8fc0,0 8px 14px rgba(29,43,83,.25);display:grid;place-items:center;font-size:26px}
+@media (hover:none) and (pointer:coarse){#lookZone:not([hidden]){display:block}#look:not([hidden]){display:block}}
+/* HP/tablet: joystick pandangan di pojok kanan bawah; tombol emotikon & lompat berjejer di atasnya */
+@media (hover:none) and (pointer:coarse){
+  .foot .rightCol{display:grid;grid-template-columns:auto auto;gap:10px;justify-items:end;align-items:end;padding-bottom:148px}
+  .foot .rightCol > :not(#emoteBtn):not(#jumpBtn){grid-column:1 / -1}
+  #emotes{bottom:calc(240px + env(safe-area-inset-bottom,0px))}
+}
+@media (max-width:560px){#look{width:118px;height:118px}}
+@media (max-height:520px){
+  #look{width:108px;height:108px;bottom:calc(8px + env(safe-area-inset-bottom,0px))}#lookKnob{width:48px;height:48px;margin:-24px 0 0 -24px;font-size:22px}
+  #emoteBtn{width:56px;height:56px;font-size:30px}
+}
+@media (hover:none) and (pointer:coarse) and (max-height:520px){.foot .rightCol{padding-bottom:116px}#emotes{bottom:calc(190px + env(safe-area-inset-bottom,0px))}}
+@media (hover:none) and (pointer:coarse) and (max-width:560px) and (min-height:521px){.foot .rightCol{padding-bottom:130px}}
+#joy::before{content:"";position:absolute;inset:26%;border-radius:50%;border:3px dashed rgba(255,255,255,.6)}
+#joyKnob{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;border-radius:50%;background:var(--sun);box-shadow:0 5px 0 var(--sun-deep),0 8px 14px rgba(29,43,83,.25);pointer-events:none}
+/* peta */
+#map .card{max-width:min(560px,calc(100vh - 60px));text-align:center}
+.island{position:relative;width:100%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#67c25a 0 82%,#f5e2a6 82% 90%,#4cb4ea 90%);margin:6px auto 4px;box-shadow:inset 0 0 0 6px rgba(255,255,255,.35)}
+.island::after{content:"";position:absolute;left:50%;top:50%;width:51%;height:51%;transform:translate(-50%,-50%);border-radius:50%;border:5px solid #e9d3a0;opacity:.8}
+.pin{position:absolute;transform:translate(-50%,-50%);border:0;background:var(--c);border-radius:20px;padding:4px 8px 2px;display:flex;flex-direction:column;align-items:center;box-shadow:0 4px 0 rgba(29,43,83,.25);z-index:1;min-width:58px}
+.pin:active{transform:translate(-50%,-46%)}
+.pin .e{font-size:clamp(24px,5vw,34px);line-height:1.1}
+.pin .l{font-size:clamp(10px,1.9vw,13px);font-weight:800;line-height:1.05;max-width:80px}
+#mapMe{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;background:#fff;border:4px solid var(--ink);z-index:2;pointer-events:none;animation:pulse 1s ease-in-out infinite alternate}
+@keyframes pulse{to{transform:scale(1.3)}}
+.voiceHelp li{font-size:15px;line-height:1.4;font-weight:600;color:var(--ink-soft);margin-bottom:4px}
+/* masuk */
+#login .card{max-width:620px;text-align:center}
+.profiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin:10px 0 14px;max-height:46vh;overflow:auto;padding:4px}
+.prof{border:0;background:var(--paper-2);border-radius:20px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:2px;box-shadow:0 4px 0 #cfdceb}
+.prof:active{transform:translateY(3px);box-shadow:0 1px 0 #cfdceb}
+.prof .av{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;font-size:34px;border:3px solid #fff;box-shadow:0 0 0 2px #cfdceb}
+.prof .nm{font-size:20px;font-weight:800;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prof .st{font-size:13px;font-weight:600;color:var(--ink-soft)}
+#newForm{display:flex;flex-direction:column;gap:12px;align-items:center;margin-top:6px}
+#nameInput{font:inherit;font-size:26px;font-weight:800;text-align:center;padding:8px 14px;border-radius:18px;border:3px solid #cfdceb;width:min(340px,100%);color:var(--ink)}
+.genders{display:flex;gap:12px}
+.gbtn{border:0;background:var(--paper-2);border-radius:20px;padding:8px 18px;font-size:20px;font-weight:800;display:flex;flex-direction:column;align-items:center;box-shadow:0 4px 0 #cfdceb}
+.gbtn .e{font-size:48px;line-height:1.1}
+.gbtn[aria-pressed="true"]{background:var(--sun);box-shadow:0 4px 0 var(--sun-deep)}
+.roles{flex-wrap:wrap;justify-content:center;max-width:480px}.roles .gbtn{min-width:92px;font-size:17px}.roles .gbtn .e{font-size:36px}
+.prof.adult{background:#fff3c4;box-shadow:0 4px 0 #ecd58a}
+#gate{z-index:60}
+#hello{font-size:clamp(22px,4vw,30px);font-weight:800;color:#fff;text-shadow:0 2px 0 rgba(29,43,83,.6)}
+#netDot{display:inline-block;width:12px;height:12px;border-radius:50%;background:#b9c3d8;margin-right:6px;vertical-align:middle}
+#netDot[data-st="online"]{background:#3fd16a}#netDot[data-st="lost"],#netDot[data-st="offline"]{background:#ff9f1c}
+/* misi */
+#mission{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);height:46px;border-radius:999px;padding:0 16px;display:flex;align-items:center;gap:6px;font-size:17px;white-space:nowrap;max-width:calc(100vw - 420px)}
+#mission .e{font-size:22px}#mission .sep{width:2px;height:22px;background:#e3ecf5;margin:0 4px}#mission .nm{overflow:hidden;text-overflow:ellipsis}#mission .dots{color:var(--sun-deep);letter-spacing:2px}
+@media (max-width:1180px){#mission{top:auto;bottom:calc(100px + env(safe-area-inset-bottom,0px));max-width:calc(100vw - 32px)}}
+/* HP: chip poin/juara kecil di kiri atas (di bawah nyawa), tidak di tengah pandangan */
+@media (max-height:520px),(max-width:560px){
+  #mission{top:calc(112px + env(safe-area-inset-top,0px));bottom:auto;left:max(14px,env(safe-area-inset-left,0px));transform:none;height:30px;padding:0 10px;font-size:13px;gap:4px;max-width:48vw;opacity:.9}
+  #mission .e{font-size:16px}#mission .sep{height:16px}
+  #bubble{opacity:.93}
+  #bubbleText{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  #eatBar{top:calc(150px + env(safe-area-inset-top,0px))}
+}
+/* tombol tambahan HUD */
+#camBtn svg,#micBtn svg{width:28px;height:28px}
+#micBtn.on{background:var(--leaf);box-shadow:0 6px 0 var(--leaf-deep)}#micBtn.on svg{stroke:#fff}
+#emoteBtn{width:64px;height:64px;border-radius:22px;font-size:34px;display:grid;place-items:center;padding:0}
+.rightCol{display:flex;flex-direction:column;gap:10px;align-items:flex-end}
+#enterBtn{display:flex;align-items:center;gap:8px;padding:6px 14px 8px 10px;border-radius:22px;animation:enterIn .35s ease-out}
+#enterBtn[hidden]{display:none}
+#talkBtn{display:flex;align-items:center;gap:8px;padding:6px 14px 8px 10px;border-radius:22px;animation:enterIn .35s ease-out}
+#talkBtn[hidden]{display:none}#talkBtn .e{font-size:28px}#talkBtn .t{display:flex;flex-direction:column;align-items:flex-start;line-height:1.05}
+#talkBtn b{font-size:22px}#talkBtn small{font-size:13px;font-weight:700;opacity:.8}
+#shootBtn[hidden]{display:none}
+#eatBar{position:absolute;top:calc(130px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.94);border-radius:20px;padding:6px 14px;box-shadow:0 6px 16px rgba(29,43,83,.2);pointer-events:none!important}
+#eatBar[hidden]{display:none}#eatE{font-size:34px}#eatLbl{font-weight:800;font-size:15px;color:var(--ink)}
+#eatBar .bar{width:160px;height:12px;border-radius:99px;background:#e3ecf5;overflow:hidden;margin-top:3px}#eatFill{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffd23a,#3fb25a);transition:width .2s}
+#towerChip{position:absolute;top:calc(100px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:rgba(58,124,245,.9);color:#fff;font-weight:800;font-size:16px;border-radius:999px;padding:4px 14px;white-space:nowrap;pointer-events:none!important}
+.npcAsk{text-align:center}
+#npcOpts{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:8px}
+#npcOpts button{font-size:28px;min-width:96px;padding:10px 18px}
+#enterBtn .e{font-size:30px}#enterBtn .t{display:flex;flex-direction:column;align-items:flex-start;line-height:1.05}
+#enterBtn b{font-size:26px}#enterBtn small{font-size:13px;font-weight:800;opacity:.9;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#enterBtn .n{font-size:14px;background:rgba(255,255,255,.25);border-radius:999px;padding:2px 8px}
+#enterBtn:disabled{background:#b9c3d8;box-shadow:0 6px 0 #8f9ab2}
+@keyframes enterIn{from{transform:scale(.6);opacity:0}}
+#lobby .lvl{margin-left:auto;font-size:14px;font-weight:800;color:var(--ink-soft);background:var(--paper-2);border-radius:999px;padding:3px 10px}
+#emotes{position:fixed;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(170px + env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:repeat(5,52px);gap:8px;background:var(--paper);padding:10px;border-radius:24px;box-shadow:0 12px 30px rgba(29,43,83,.3);z-index:20}
+#emotes .em{border:0;background:var(--paper-2);border-radius:16px;font-size:32px;width:52px;height:52px;padding:0;transition:transform .1s}
+#emotes .em:active{transform:scale(1.25)}
+/* lobi, papan ronde, hasil */
+#lobby{position:fixed;left:50%;top:calc(70px + env(safe-area-inset-top,0px));transform:translateX(-50%);width:min(560px,calc(100vw - 32px));background:var(--paper);border-radius:24px;padding:12px 16px;box-shadow:0 14px 34px rgba(29,43,83,.3);z-index:15;max-height:calc(100vh - 220px);overflow:auto}
+#lobby .lh{display:flex;align-items:center;gap:8px;font-size:24px}#lobby .lh .e{font-size:30px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--paper-2);border-radius:999px;padding:3px 12px 3px 4px;font-weight:800;font-size:16px}
+.chip.done{background:#d6f5dc}
+.dot{width:28px;height:28px;border-radius:50%;display:inline-grid;place-items:center;font-style:normal;font-size:17px;border:2px solid #fff}
+.lvls{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin:6px 0 10px}
+.lv{border:0;background:var(--paper-2);border-radius:16px;padding:6px 8px;font-weight:800;font-size:15px;display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.15}
+.lv span{font-size:13px;letter-spacing:-2px}
+.lv.on{background:var(--ink);color:#fff}
+#lobby .go{font-size:30px;padding:6px 40px 8px;display:block;margin:0 auto}
+#lobby .wait{font-size:20px;font-weight:800;text-align:center;color:var(--ink-soft);margin:8px 0}
+#lobby .note{text-align:center;margin:8px 0 0}
+#roundBar{position:fixed;top:calc(70px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:6px;max-width:calc(100vw - 32px);z-index:14}
+#roundBar .chip{box-shadow:0 4px 12px rgba(29,43,83,.2);background:#fff}#roundBar .chip.done{background:#d6f5dc}
+#results{z-index:30}
+#results .card{max-width:560px}
+#results .rh{font-size:28px;font-weight:800;margin-bottom:6px}
+#results .ans{font-size:22px;font-weight:600;background:#fff3c4;border-radius:14px;padding:6px 12px;margin-bottom:8px}
+.res{list-style:none;padding:0;margin:0 0 8px}
+.res li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:14px;font-size:20px;font-weight:800}
+.res li.ok{background:#e9f9ec}.res li.no{opacity:.75}
+.res .m{font-size:26px;width:34px;text-align:center}.res .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.res .tm{font-size:14px;color:var(--ink-soft);font-weight:600}.res .p{color:var(--sun-deep);min-width:34px;text-align:right}
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:8px}
+.gal figure{margin:0;background:var(--paper-2);border-radius:14px;padding:6px;text-align:center}
+.gal img,.gal .noimg{width:100%;aspect-ratio:4/3;border-radius:10px;object-fit:cover;background:#fff;display:grid;place-items:center}
+.gal figcaption{font-weight:800;font-size:16px;margin-top:4px}
+#results .top{display:flex;flex-wrap:wrap;gap:6px 14px;font-weight:800;font-size:16px;background:#fff6df;border-radius:14px;padding:8px 12px}
+/* papan aktivitas 2D */
+#pad{position:fixed;inset:0;z-index:12;background:rgba(29,43,83,.55);display:flex;padding:calc(8px + env(safe-area-inset-top,0px)) max(8px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))}
+.padCard{flex:1;background:#eef6fd;border-radius:26px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 50px rgba(29,43,83,.35)}
+.padHead{display:flex;align-items:center;gap:10px;padding:8px 10px;background:#fff}
+.padHead .ico{width:50px;height:50px;flex:none}
+#padText{flex:1;font-size:clamp(16px,2.4vw,21px);font-weight:600;line-height:1.25}
+.padBody{flex:1;min-height:0;display:flex;gap:8px;padding:8px}
+#padTools{display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center;flex:none;max-width:150px}
+#padStage{flex:1;min-width:0;min-height:0;position:relative}
+#padCanvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+#padFoot{display:flex;gap:10px;justify-content:center;padding:0 10px 10px;flex-wrap:wrap}
+#padFoot .chunky{font-size:20px;padding:6px 18px 8px}
+.padHint{display:flex;flex-direction:column;align-items:center;background:#fff;border-radius:20px;padding:10px 12px;text-align:center}
+.padHint .e{font-size:56px;line-height:1.1}.padHint b{font-size:44px;line-height:1}.padHint b.big{font-size:60px}.padHint span:last-child{font-size:18px;font-weight:800}
+.dcols{display:grid;grid-template-columns:repeat(2,40px);gap:8px}
+.dc{width:40px;height:40px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px #cfdceb;padding:0}
+.dc.on{box-shadow:0 0 0 4px var(--ink)}
+.dsizes{display:grid;grid-template-columns:repeat(2,44px);gap:8px}
+.ds{width:44px;height:44px;border-radius:14px;border:0;background:#fff;display:grid;place-items:center;font-size:22px;padding:0}
+.ds i{display:block;border-radius:50%;background:var(--ink)}
+.ds.on{background:var(--sun)}
+#padTools{overflow-y:auto;max-height:100%}
+@media (max-width:640px),(max-height:520px){.dcols{grid-template-columns:repeat(4,30px);gap:6px}.dc{width:30px;height:30px;border-width:2px}.dsizes{grid-template-columns:repeat(4,34px);gap:6px}.ds{width:34px;height:34px;font-size:18px}.padHint .e{font-size:40px}.padHint b{font-size:32px}#padTools{max-width:160px;justify-content:flex-start;gap:8px}.padHead{padding:4px 8px}.padHead .ico{width:42px;height:42px}#padFoot .chunky{font-size:17px;padding:4px 14px 6px}}
+/* peta: lencana */
+.pin .bd{position:absolute;top:-10px;right:-8px;font-size:16px;background:#fff;border-radius:999px;padding:0 4px;box-shadow:0 2px 4px rgba(29,43,83,.25)}
+.pin.hot{outline:4px solid #ffd23a;animation:hot 1s ease-in-out infinite alternate}
+@keyframes hot{to{outline-color:#fff}}
+.friend{position:absolute;transform:translate(-50%,-50%);background:var(--ink);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:1px 7px;z-index:2;pointer-events:none}
+#phaseChip{position:absolute;top:calc(66px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:rgba(29,43,83,.85);color:#fff;font-weight:800;font-size:16px;border-radius:999px;padding:4px 14px;white-space:nowrap;pointer-events:none!important}
+#phaseChip.warn{background:#e8434b;animation:warnPulse .8s ease-in-out infinite alternate}
+@keyframes warnPulse{to{transform:translateX(-50%) scale(1.08)}}
+#spect{position:absolute;top:calc(100px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:rgba(255,255,255,.95);border-radius:22px;padding:10px 16px;text-align:center;box-shadow:0 12px 30px rgba(29,43,83,.3);width:min(420px,calc(100vw - 32px))}
+#spect .sh{font-weight:800;font-size:17px}
+#spect .sr{display:flex;align-items:center;justify-content:center;gap:12px;margin:8px 0}
+#spect .sr b{font-size:24px;min-width:120px}
+#spect .ico{width:46px;height:46px;font-size:20px}
+#spect .chunky.leaf{font-size:20px;padding:6px 20px 8px}
+#spect p{margin:8px 0 0;font-size:14px;font-weight:600;color:var(--ink-soft)}
+#offline{position:absolute;top:calc(96px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:#ff9f1c;color:#1d2b53;font-weight:800;font-size:14px;border-radius:999px;padding:3px 12px;white-space:nowrap;pointer-events:none!important}
+.offWarn{background:#fff3c4;border-radius:16px;padding:10px 14px;font-size:15px;font-weight:600;line-height:1.4;text-align:left;color:var(--ink);margin-top:8px}
+.offWarn b{display:block;margin-bottom:4px}
+#vitals{position:absolute;top:calc(78px + env(safe-area-inset-top,0px));left:max(14px,env(safe-area-inset-left,0px));display:flex;gap:10px;align-items:center;background:rgba(255,255,255,.85);border-radius:999px;padding:3px 12px;font-size:17px;pointer-events:none!important;box-shadow:0 4px 10px rgba(29,43,83,.15)}
+#vitals .coin b{font-variant-numeric:tabular-nums}
+#fightBox{display:flex;gap:10px}
+#fightBox[hidden]{display:none}
+#punchBtn,#shootBtn{width:70px;height:70px;border-radius:24px;font-size:36px;padding:0;display:grid;place-items:center;position:relative;background:#ffe1e1;box-shadow:0 6px 0 #f0b0b0}
+#shootBtn small{position:absolute;bottom:2px;right:6px;font-size:14px;font-weight:800}
+#hurt{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 120px 40px rgba(232,67,75,.0);z-index:35}
+#hurt.on{animation:hurt .6s ease-out}
+@keyframes hurt{0%{box-shadow:inset 0 0 140px 60px rgba(232,67,75,.75)}100%{box-shadow:inset 0 0 120px 40px rgba(232,67,75,0)}}
+.floatTxt{position:fixed;left:50%;top:40%;transform:translateX(-50%);font-size:34px;font-weight:800;color:#ffd23a;text-shadow:0 3px 0 #1d2b53;pointer-events:none;z-index:36;animation:floatUp 1.2s ease-out forwards}
+@keyframes floatUp{to{transform:translate(-50%,-80px);opacity:0}}
+.shopCard{max-width:640px}
+.bal{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:20px;font-weight:800;margin:4px 0 6px}
+#shopSwap .chunky{font-size:17px;padding:6px 14px 8px}
+#shopSwap .chunky:disabled,.items .chunky:disabled{opacity:.45}
+.items{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:12px}
+.item{background:var(--paper-2);border-radius:18px;padding:10px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px}
+.item.eq{outline:3px solid var(--leaf)}
+.item .e{font-size:40px;line-height:1.1}.item b{font-size:16px}.item small{font-size:12px;color:var(--ink-soft);font-weight:600;min-height:14px}
+.item .chunky{font-size:16px;padding:4px 14px 6px;margin-top:4px}
+@media (max-height:520px){#punchBtn,#shootBtn{width:56px;height:56px;font-size:28px}#vitals{top:calc(62px + env(safe-area-inset-top,0px));font-size:14px}}
+#speak{position:fixed;inset:0;z-index:12;background:rgba(29,43,83,.55);display:flex;padding:calc(8px + env(safe-area-inset-top,0px)) max(8px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))}
+#speak .padHead{align-items:center}.spTitle{font-size:13px;font-weight:800;color:var(--leaf-deep);text-transform:uppercase;letter-spacing:.04em}
+#spText{font-size:clamp(15px,2.3vw,20px);font-weight:600;line-height:1.25}
+.spBody{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:8px}
+.spDots{display:flex;gap:8px}.spDots i{width:14px;height:14px;border-radius:50%;background:#cfdceb}.spDots i.done{background:var(--leaf)}.spDots i.cur{background:var(--sun);transform:scale(1.3)}
+.spShow{background:#fff;border-radius:28px;padding:4px 34px;font-weight:800;font-size:clamp(80px,22vw,190px);line-height:1.15;color:var(--ink);box-shadow:0 10px 26px rgba(29,43,83,.15);max-width:100%;text-align:center;letter-spacing:.04em}
+.spShow.arab{font-family:"Geeza Pro","Noto Naskh Arabic","Noto Sans Arabic","Amiri","Scheherazade New","Traditional Arabic",serif;font-weight:400;letter-spacing:0;font-size:clamp(80px,20vw,170px);padding:0 34px 14px}
+.spStatus{font-size:clamp(16px,2.6vw,22px);font-weight:800;color:var(--ink-soft);min-height:1.3em;text-align:center}
+.spStatus.listen,.spStatus.heard{color:var(--leaf-deep)}.spStatus.wrong{color:#c8323a}.spStatus.right{color:var(--leaf-deep)}
+.spBtns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}.spBtns .chunky{font-size:22px;padding:8px 22px 10px}
+#spMic{touch-action:none;-webkit-user-select:none;user-select:none;font-size:24px;padding:14px 30px 16px;border-radius:999px}
+#spMic:disabled{opacity:.5}
+#spMic.on{background:#e8434b;color:#fff;box-shadow:0 0 0 10px rgba(232,67,75,.25),0 6px 0 #a82830;animation:micPulse .7s ease-in-out infinite alternate;transform:scale(1.08)}
+@keyframes micPulse{to{transform:scale(1.08)}}
+@media (max-height:520px){.spShow{font-size:clamp(56px,16vh,110px);padding:0 24px}.spShow.arab{font-size:clamp(56px,16vh,110px)}.spBtns .chunky{font-size:18px;padding:5px 16px 7px}.spBody{gap:6px}}
+#toast{position:fixed;top:calc(84px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:999px;padding:6px 18px;font-weight:800;font-size:18px}
+#loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--sky);color:#fff;font-size:28px;font-weight:800}
+@media (max-width:560px){
+  .ico{width:52px;height:52px}
+  #jumpBtn,#exitBtn{width:64px;height:64px}
+  #joy{width:118px;height:118px}
+  #stars{height:52px;font-size:24px}
+  #bubble{padding:8px 12px 10px}
+}
+@media (max-height:520px){
+  .ico{width:46px;height:46px}.ico svg{width:26px;height:26px}
+  #stars{height:46px;font-size:22px}#stars svg{width:28px;height:28px}
+  #jumpBtn,#exitBtn{width:58px;height:58px;border-radius:20px}
+  #joy{width:108px;height:108px}#joyKnob{width:50px;height:50px;margin:-25px 0 0 -25px}
+  #jumpBtn svg,#exitBtn svg{width:30px;height:30px}
+  .foot{bottom:calc(8px + env(safe-area-inset-bottom,0px))}
+  .foot .mid{flex-direction:row;align-items:flex-end;justify-content:center}
+  #bubble{max-width:380px;padding:5px 10px 6px;border-radius:16px}
+  #bubble .who{font-size:11px}#bubbleText{font-size:14px}
+  #repeatBtn{width:40px;height:40px}
+  #actionBtn{font-size:22px;padding:4px 20px 6px;flex:none}
+  .tl,.tr{top:calc(8px + env(safe-area-inset-top,0px))}
+  .logo{font-size:56px}.titleCard{gap:10px}#playBtn{font-size:30px;padding:6px 40px 10px}
+  .card{padding:16px}.card h2{font-size:24px}.card p{font-size:17px}.together p.big{font-size:20px}
+}
+@media (prefers-reduced-motion:reduce){.chunky{transition:none}}
+/* HP tegak: ikon kanan atas pindah ke baris kedua supaya tidak bertumpuk dengan ikon kiri */
+@media (max-width:560px) and (min-height:521px){
+  .ico{width:44px;height:44px}.ico svg{width:24px;height:24px}#stars{height:44px;font-size:20px}#stars svg{width:26px;height:26px}
+  .tl{gap:8px}.tr{top:calc(60px + env(safe-area-inset-top,0px));gap:8px}
+  #vitals{top:calc(112px + env(safe-area-inset-top,0px))}
+  #mission{top:calc(146px + env(safe-area-inset-top,0px))}
+  .foot .mid #bubble{position:fixed;top:calc(180px + env(safe-area-inset-top,0px));left:14px;right:14px;width:auto;max-width:none}
+  #phaseChip,#toast,#offline{top:calc(274px + env(safe-area-inset-top,0px))}
+  #towerChip{top:calc(308px + env(safe-area-inset-top,0px))}
+  #eatBar{top:calc(342px + env(safe-area-inset-top,0px))}
+}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Dunia Pulau Balok"></canvas>
+<div id="loading">Memuat pulau…</div>
+
+<!-- HUD -->
+<div id="hud" hidden>
+  <div id="joyZone" aria-hidden="true"></div>
+  <div id="lookZone" aria-hidden="true"></div>
+  <div id="look" aria-label="Geser untuk melihat sekeliling"><div id="lookKnob">👁️</div></div>
+  <div class="tl">
+    <button class="chunky ico" id="homeBtn" aria-label="Pulang ke tengah pulau">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>
+    </button>
+    <button class="chunky ico" id="mapBtn" aria-label="Peta pulau">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="2.4" stroke-linejoin="round"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2Z" fill="#9be07f"/><path d="M9 4v14M15 6v14"/></svg>
+    </button>
+    <button class="chunky ico" id="shopBtn" aria-label="Toko"><span style="font-size:28px">🛒</span></button>
+    <button class="chunky ico" id="worldBtn" aria-label="Atur siang, malam, dan zombie (orang tua)" hidden><span style="font-size:28px">🌗</span></button>
+    <button class="chunky ico" id="wardrobeBtn" aria-label="Ganti baju">
+      <svg viewBox="0 0 24 24" fill="#3a7cf5" stroke="#1d2b53" stroke-width="2" stroke-linejoin="round"><path d="M8 3 3 6l2 5 2-1v11h10V10l2 1 2-5-5-3c-.5 2-2 3-4 3S8.5 5 8 3Z"/></svg>
+    </button>
+  </div>
+  <button class="chunky" id="mission" aria-label="Misi petualangan"></button>
+  <div id="vitals"><span id="hearts">❤️❤️❤️🤍🤍</span><span class="coin">🪙 <b id="coinCount">0</b></span></div>
+  <div id="phaseChip" hidden></div>
+  <div id="towerChip" hidden></div>
+  <div id="eatBar" hidden><span id="eatE"></span><div><div id="eatLbl"></div><div class="bar"><i id="eatFill"></i></div></div></div>
+  <div id="spect" hidden>
+    <div class="sh">👻 Nyawamu habis · kamu sedang menonton</div>
+    <div class="sr"><button class="chunky ico" id="specPrev" aria-label="Pemain sebelumnya">◀</button><b id="specName"></b><button class="chunky ico" id="specNext" aria-label="Pemain berikutnya">▶</button></div>
+    <button class="chunky leaf" id="specShop">🛒 Beli nyawa</button>
+    <p>Koin kurang? Tunggu pagi, lalu belajar di tempat bermain untuk dapat bintang ⭐.</p>
+  </div>
+  <div id="offline" hidden>⚠️ Main sendiri: belum tersambung ke server</div>
+  <div class="tr">
+    <button class="chunky ico" id="micBtn" aria-label="Mikrofon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="2.4" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+    <button class="chunky ico" id="rotBtn" aria-label="Putar layar"><span style="font-size:26px">🔄</span></button>
+    <button class="chunky ico" id="camBtn" aria-label="Ganti sudut kamera">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="2.4" stroke-linejoin="round"><rect x="3" y="7" width="13" height="11" rx="2" fill="#7cc8f5"/><path d="M16 11l5-3v9l-5-3Z"/></svg>
+    </button>
+    <div class="chunky" id="stars" aria-label="Bintang">
+      <svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.2 1.3-6.6-4.9-4.6 6.6-.8Z" fill="#ffc93c" stroke="#e0a400" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      <span id="starCount">0</span>
+    </div>
+    <button class="chunky" id="parentBtn" aria-label="Menu orang tua">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+    </button>
+  </div>
+  <div class="foot">
+    <button class="chunky ico" id="exitBtn" aria-label="Keluar dari permainan ini" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg>
+    </button>
+    <div id="joy" aria-label="Joystick: geser untuk berjalan"><div id="joyKnob"></div></div>
+    <div class="mid">
+      <button class="chunky leaf" id="actionBtn" hidden>Sudah!</button>
+      <div id="bubble" hidden>
+        <div class="txt"><div class="who" id="bubbleWho">Kak Rara</div><div id="bubbleText"></div></div>
+        <button class="chunky" id="repeatBtn" aria-label="Dengar lagi">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9Z" fill="#ffc93c"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="rightCol">
+      <button class="chunky leaf" id="enterBtn" hidden></button>
+      <button class="chunky sun" id="talkBtn" hidden></button>
+      <div id="fightBox" hidden>
+        <button class="chunky" id="punchBtn" aria-label="Pukul">👊</button>
+        <button class="chunky" id="shootBtn" aria-label="Tembak">🔫<small>0</small></button>
+      </div>
+      <button class="chunky" id="emoteBtn" aria-label="Emotikon">😀</button>
+      <button class="chunky sun" id="jumpBtn" aria-label="Lompat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5"/><path d="M5 11l7-7 7 7"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Layar awal -->
+<div class="screen" id="start" hidden>
+  <div class="titleCard">
+    <div class="logo">Pulau<br><span>Balok</span></div>
+    <div id="hello"></div>
+    <div class="tag">Petualangan mencari Kristal Pelangi!</div>
+    <button class="chunky sun" id="playBtn">
+      <svg viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5Z" fill="#1d2b53" stroke="#1d2b53" stroke-width="2" stroke-linejoin="round"/></svg>
+      Ayo Main
+    </button>
+    <div class="startRow">
+      <button class="chunky" id="startWardrobe">
+        <svg viewBox="0 0 24 24" fill="#3a7cf5" stroke="#1d2b53" stroke-width="2" stroke-linejoin="round"><path d="M8 3 3 6l2 5 2-1v11h10V10l2 1 2-5-5-3c-.5 2-2 3-4 3S8.5 5 8 3Z"/></svg>
+        Ganti Baju
+      </button>
+      <button class="chunky" id="switchPlayer">🔄 Ganti Pemain</button>
+      <button class="chunky" id="startParent">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        Orang Tua
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Lemari baju -->
+<div id="wardrobe" hidden>
+  <div class="card">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="shirt" aria-selected="true">Baju</button>
+      <button role="tab" data-tab="pants" aria-selected="false">Celana</button>
+      <button role="tab" data-tab="skin" aria-selected="false">Kulit</button>
+      <button role="tab" data-tab="hat" aria-selected="false">Topi</button>
+    </div>
+    <div class="swatches" id="swatches"></div>
+    <div class="wfoot"><button class="chunky leaf" id="wardrobeDone">Selesai</button></div>
+  </div>
+</div>
+
+<!-- Main bersama -->
+<div class="screen dim" id="together" hidden>
+  <div class="card together">
+    <div class="badge">Main bersama Ayah / Bunda</div>
+    <p class="big" id="togetherText"></p>
+    <p id="togetherHint">Lakukan di dunia nyata, lalu ketuk "Sudah!" untuk dapat 3 bintang.</p>
+    <div class="row">
+      <button class="chunky leaf" id="togetherDone">Sudah!</button>
+      <button class="chunky" id="togetherLater">Nanti</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ngobrol dengan warga -->
+<div class="screen dim" id="npcAsk" hidden>
+  <div class="card together npcAsk">
+    <div class="badge" id="npcWho"></div>
+    <p class="big" id="npcQ"></p>
+    <div id="npcOpts"></div>
+    <div class="row" style="justify-content:center;margin-top:12px"><button class="chunky" id="npcLater">Nanti saja</button></div>
+  </div>
+</div>
+
+<!-- Hadiah -->
+<div class="screen" id="reward" hidden>
+  <div class="card reward">
+    <h2 id="rewardTitle">Hadiah Baru!</h2>
+    <p id="rewardText"></p>
+    <div class="row" style="justify-content:center"><button class="chunky sun" id="rewardOk">Asyik!</button></div>
+  </div>
+</div>
+
+<!-- Istirahat -->
+<div class="screen dim" id="rest" hidden>
+  <div class="card">
+    <svg class="moon" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="#1d2b53"/><path d="M62 22a30 30 0 1 0 18 46A26 26 0 0 1 62 22Z" fill="#ffc93c"/><circle cx="28" cy="30" r="3" fill="#fff"/><circle cx="40" cy="74" r="2" fill="#fff"/><circle cx="76" cy="28" r="2.5" fill="#fff"/></svg>
+    <h2>Waktunya istirahat</h2>
+    <p>Matamu perlu istirahat. Yuk main di luar, menggambar, atau baca buku bersama Ayah dan Bunda!</p>
+    <div class="row" style="justify-content:center"><button class="chunky" id="restMore">Orang tua: tambah 10 menit</button></div>
+  </div>
+</div>
+
+<!-- Gerbang orang tua -->
+<div class="screen dim" id="gate" hidden>
+  <div class="card gate">
+    <h2>Khusus orang tua</h2>
+    <p>Jawab soal ini untuk lanjut.</p>
+    <div class="q" id="gateQ"></div>
+    <div class="ans" id="gateAns"></div>
+    <div class="row" style="margin-top:14px"><button class="chunky" id="gateCancel">Batal</button></div>
+  </div>
+</div>
+
+<!-- Panel orang tua -->
+<div class="screen dim" id="parent" hidden>
+  <div class="card">
+    <button class="chunky closeX ico" id="parentClose" aria-label="Tutup">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+    <h2>Untuk Orang Tua</h2>
+    <p class="note" id="timeLine"></p>
+    <h3>Pemain</h3>
+    <p class="note">Atur tingkat kesulitan dan batas main harian tiap pemain. Berlaku di semua tempat bermain dan di semua perangkat.</p>
+    <div class="tablewrap"><table class="ptable fam"><thead><tr><th>Nama</th><th>Tingkat</th><th>Batas/hari</th><th>Hari ini</th><th>⭐ 💎</th><th></th></tr></thead><tbody id="famBody"></tbody></table></div>
+    <h3>Main bersama</h3>
+    <div class="set"><label for="setMax">Maksimal pemain di satu tempat bermain</label>
+      <select id="setMax"><option value="1">1 (main sendiri-sendiri)</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="8">8</option><option value="10">10</option></select></div>
+    <h3>Siang, malam & zombie</h3>
+    <div class="set"><label for="setDay">Lama siang</label>
+      <select id="setDay"><option value="3">3 menit</option><option value="5">5 menit</option><option value="10">10 menit</option><option value="15">15 menit</option><option value="20">20 menit</option><option value="30">30 menit</option></select></div>
+    <div class="set"><label for="setNight">Lama malam</label>
+      <select id="setNight"><option value="2">2 menit</option><option value="3">3 menit</option><option value="5">5 menit</option><option value="10">10 menit</option></select></div>
+    <div class="set"><label for="setSafeN">Jumlah zona aman saat malam</label>
+      <select id="setSafeN"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="7">7</option></select></div>
+    <div class="set"><label for="setSafeSec">Zona aman berpindah setiap</label>
+      <select id="setSafeSec"><option value="30">30 detik</option><option value="45">45 detik</option><option value="60">1 menit</option><option value="90">1,5 menit</option><option value="120">2 menit</option></select></div>
+    <div class="set"><label for="setRest">Istirahat bila semua kehabisan nyawa</label>
+      <select id="setRest"><option value="15">15 detik</option><option value="30">30 detik</option><option value="60">1 menit</option></select></div>
+    <div class="set"><span>Siang & malam berganti otomatis</span><button class="toggle" id="setCycle" aria-pressed="true">Nyala</button></div>
+    <div class="set"><span>Zombie muncul saat malam</span><button class="toggle" id="setZombie" aria-pressed="true">Nyala</button></div>
+    <p class="note">Kekuatan zombie mengikuti tingkat tiap pemain: tingkat Mudah mengalahkan zombie lebih cepat dan terluka lebih sedikit. Akun orang tua bisa mengganti siang/malam dan menambah zombie lewat tombol 🌗 (dengan soal hitung).</p>
+    <h3>Perkembangan <select id="progWho" class="inlineSel"></select></h3>
+    <div class="tablewrap"><table class="ptable"><thead><tr><th>Area</th><th>Tingkat</th><th>Ronde</th><th>Benar sekali coba</th></tr></thead><tbody id="progBody"></tbody></table></div>
+    <h3>Perangkat ini</h3>
+    <div class="set"><label for="setVoice">Suara Kak Rara</label>
+      <span style="display:flex;gap:8px;align-items:center;min-width:0"><select id="setVoice" style="max-width:220px"></select><button class="toggle" id="voiceTest">Tes</button></span></div>
+    <div class="set"><label for="setRate">Kecepatan suara</label>
+      <select id="setRate"><option value="0.8">Pelan</option><option value="0.95">Normal</option><option value="1.1">Cepat</option></select></div>
+    <div class="set"><span>Efek bunyi</span><button class="toggle" id="setSfx" aria-pressed="true">Nyala</button></div>
+    <div class="set"><span>Obrolan suara dengan teman</span><button class="toggle" id="setChat" aria-pressed="true">Nyala</button></div>
+    <div class="set"><span>Grafis ringan (untuk HP/tablet lama)</span><button class="toggle" id="setLite" aria-pressed="false">Mati</button></div>
+    <p class="note" id="voiceNote"></p>
+    <ul class="voiceHelp">
+      <li><b>iPad/iPhone/Mac:</b> Pengaturan &gt; Aksesibilitas &gt; Konten Lisan &gt; Suara &gt; Indonesia &gt; unduh <b>Damayanti (Ditingkatkan/Premium)</b>. Jauh lebih alami daripada versi biasa.</li>
+      <li><b>Windows:</b> buka game di <b>Microsoft Edge</b>, lalu pilih suara <b>Gadis Online (Natural)</b>. Ini suara paling mirip manusia.</li>
+      <li><b>Android/Chrome:</b> pilih <b>Google Bahasa Indonesia</b> (butuh internet). Tanpa internet, game otomatis pindah ke suara lain.</li>
+    </ul>
+    <h3>Buka di perangkat lain</h3>
+    <div class="qr"><div class="box" id="qrBox"></div><div style="flex:1;min-width:180px"><p class="note">Sambungkan HP atau tablet ke WiFi rumah yang sama, lalu pindai kode ini atau ketik alamat:</p><code id="urlText"></code><p class="note" id="urlWarn"></p></div></div>
+    <h3>Dasar penelitian</h3>
+    <ul class="research">
+      <li><b>Belajar aktif.</b> Anak berpikir dulu sebelum mengetuk: menghitung sendiri lalu menekan "Sudah", menebak pola, memilih rumah warna. (Empat Pilar Belajar, Hirsh-Pasek dkk., 2015)</li>
+      <li><b>Minim gangguan.</b> Tanpa iklan, tanpa timer, tanpa kalah. Salah dijawab dengan petunjuk yang menjelaskan, bukan bunyi buzzer.</li>
+      <li><b>Bermakna.</b> Buah, hewan, dan benda yang ada di sekitar anak, dengan suara bahasa Indonesia.</li>
+      <li><b>Sosial.</b> Kartu "Main bersama" memindahkan pelajaran ke dunia nyata bersama Anda. Bermain didampingi orang tua lebih bermanfaat daripada bermain sendiri.</li>
+      <li><b>Pujian usaha.</b> Pujian menyebut usaha ("kamu teliti", "kamu terus mencoba"), bukan "pintar", agar anak tidak takut mencoba (Dweck).</li>
+      <li><b>Tingkat menyesuaikan.</b> Soal naik setelah 3 kali benar berturut-turut, turun jika anak kesulitan.</li>
+      <li><b>Lebih dari akademik.</b> Selain angka, warna, dan huruf, ada daya ingat (Kartu Kembar, Panggung Musik), membandingkan dan mengurutkan (Kolam Ikan, Tangga Ukuran), serta mengenal perasaan (Rumah Perasaan), bagian penting kesiapan sekolah.</li>
+      <li><b>Batas layar.</b> AAP dan WHO menyarankan anak 2–5 tahun maksimal sekitar 1 jam layar per hari, sebaiknya didampingi. Batas harian di atas membantu.</li>
+    </ul>
+    <h3>Data</h3>
+    <div class="row"><button class="chunky danger" id="resetBtn">Hapus semua kemajuan</button></div>
+    <p class="note">Kemajuan disimpan di masing-masing perangkat.</p>
+  </div>
+</div>
+
+<!-- Masuk: pilih pemain -->
+<div class="screen" id="login" hidden>
+  <div class="card">
+    <h2>Siapa yang main?</h2>
+    <div class="profiles" id="profiles"></div>
+    <p class="note" id="profEmpty">Belum ada pemain. Buat pemain baru, yuk!</p>
+    <div class="row" style="justify-content:center">
+      <button class="chunky sun" id="newPlayer" style="font-size:22px;padding:8px 22px 10px">+ Anak</button>
+      <button class="chunky" id="newParent" style="font-size:22px;padding:8px 22px 10px">🔒 + Orang tua</button>
+    </div>
+    <div id="newForm" hidden>
+      <input id="nameInput" maxlength="16" autocomplete="off" placeholder="Tulis nama" aria-label="Nama pemain">
+      <div class="genders roles" id="roleBox" hidden></div>
+      <p class="note" id="namePreview"></p>
+      <div class="genders" id="kidGender">
+        <button class="gbtn" data-g="L" aria-pressed="true"><span class="e">👦</span>Laki-laki</button>
+        <button class="gbtn" data-g="P" aria-pressed="false"><span class="e">👧</span>Perempuan</button>
+      </div>
+      <button class="chunky leaf" id="createBtn" style="font-size:26px;padding:6px 34px 8px">Mulai</button>
+    </div>
+    <p class="note" style="margin-top:12px"><span id="netDot"></span><span id="netNote"></span></p>
+    <div class="offWarn" id="offWarn" hidden>
+      <b>Belum tersambung, jadi tiap perangkat main sendiri-sendiri.</b>
+      Untuk main bersama: di komputer/Mac, klik dua kali <i>Mulai Pulau Balok</i> (versi yang ada file <i>server.py</i>),
+      lalu buka alamat yang tampil di jendela Terminal (misalnya <i>http://192.168.1.4:8080</i>) di semua HP/tablet.
+      Jangan membuka file index.html langsung.
+    </div>
+  </div>
+</div>
+
+<!-- Lobi lokasi, papan ronde, hasil ronde -->
+<div id="lobby" hidden></div>
+<div id="roundBar" hidden></div>
+<div class="screen dim" id="results" hidden><div class="card"></div></div>
+<div id="emotes" hidden></div>
+
+<!-- Papan aktivitas: menulis, menggambar, puzzle -->
+<div id="pad" hidden>
+  <div class="padCard">
+    <div class="padHead">
+      <button class="chunky ico" id="padBack" aria-label="Keluar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg>
+      </button>
+      <div id="padText"></div>
+      <button class="chunky ico" id="padSay" aria-label="Dengar lagi">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9Z" fill="#ffc93c"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>
+      </button>
+    </div>
+    <div class="padBody"><div id="padTools"></div><div id="padStage"><canvas id="padCanvas"></canvas></div></div>
+    <div id="padFoot"></div>
+  </div>
+</div>
+
+<!-- Membaca dengan suara: huruf, angka, iqro' -->
+<div id="speak" hidden>
+  <div class="padCard">
+    <div class="padHead">
+      <button class="chunky ico" id="spBack" aria-label="Keluar"><svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg></button>
+      <div style="flex:1;min-width:0"><div class="spTitle" id="spTitle"></div><div id="spText"></div></div>
+      <button class="chunky ico" id="spSay" aria-label="Dengar lagi"><svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9Z" fill="#ffc93c"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg></button>
+    </div>
+    <div class="spBody">
+      <div class="spDots" id="spDots"></div>
+      <div class="spShow" id="spShow"></div>
+      <div class="spStatus" id="spStatus"></div>
+      <div class="spBtns">
+        <button class="chunky sun" id="spMic">🎤 Tahan untuk bicara</button>
+        <button class="chunky sun" id="spHear" hidden>🔊 Dengar jawaban</button>
+        <button class="chunky leaf" id="spYes" hidden>✅ Aku benar</button>
+        <button class="chunky" id="spNo" hidden>🔁 Coba lagi</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Dikeluarkan karena nama dipakai di perangkat lain -->
+<div class="screen dim" id="kicked" hidden>
+  <div class="card" style="text-align:center">
+    <h2>Dibuka di perangkat lain</h2>
+    <p>Pemain ini sedang dipakai di HP atau tablet lain. Datanya aman dan tetap sama.</p>
+    <div class="row" style="justify-content:center"><button class="chunky sun" id="kickedOk">Pilih pemain lagi</button></div>
+  </div>
+</div>
+
+<!-- Peta pulau -->
+<div class="screen dim" id="map" hidden>
+  <div class="card">
+    <button class="chunky closeX ico" id="mapClose" aria-label="Tutup">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+    <h2>Mau main di mana?</h2>
+    <div class="island"><div id="mapPins"></div><div id="mapMe"></div></div>
+  </div>
+</div>
+
+<div id="hurt"></div>
+
+<!-- Toko -->
+<div class="screen dim" id="shop" hidden>
+  <div class="card shopCard">
+    <button class="chunky closeX ico" id="shopClose" aria-label="Tutup"><svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <h2>🛒 Toko</h2>
+    <div class="bal" id="shopBal"></div>
+    <p class="note">Bintang ⭐ didapat dari belajar di tempat bermain. Tukar jadi koin 🪙 untuk belanja.</p>
+    <div class="row" id="shopSwap"></div>
+    <div class="items" id="shopGrid"></div>
+  </div>
+</div>
+
+<!-- Panel dunia (khusus orang tua) -->
+<div class="screen dim" id="worldPanel" hidden>
+  <div class="card" style="text-align:center">
+    <button class="chunky closeX ico" id="worldClose" aria-label="Tutup"><svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <h2>🌗 Atur dunia</h2>
+    <p id="worldNow"></p>
+    <div class="row" style="justify-content:center">
+      <button class="chunky" data-a="night">🌙 Jadikan malam</button>
+      <button class="chunky sun" data-a="day">☀️ Jadikan siang</button>
+    </div>
+    <div class="row" style="justify-content:center;margin-top:12px">
+      <button class="chunky leaf" data-a="5">🧟 +5 zombie</button>
+      <button class="chunky leaf" data-a="10">🧟 +10 zombie</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" hidden></div>
+
+<script src="lib/qrcode.js"></script>
+<script type="module" src="js/game.js"></script>
+</body>
+</html>

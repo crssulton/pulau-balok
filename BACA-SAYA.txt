@@ -1,0 +1,300 @@
+PULAU BALOK — petualangan belajar untuk anak 4–5 tahun
+=====================================================
+
+Misi: kumpulkan poin sebanyak-banyaknya dan jadilah juara satu di tempat
+bermain kesukaanmu, bersama Kak Rara. Malam hari ada zombie!
+Bisa main sendiri, atau main bersama dari beberapa HP/tablet di WiFi rumah.
+
+CARA MENJALANKAN (Mac)
+1. Ekstrak zip ini ke folder mana saja (misal Dokumen).
+2. Klik dua kali "Mulai Pulau Balok (Mac).command".
+   - Jika muncul peringatan "pengembang tidak dikenal": klik kanan file itu
+     > Buka > Buka. Cukup sekali.
+   - Jika macOS bertanya "izinkan koneksi masuk?", pilih Izinkan.
+   - Butuh Python 3. Jika belum ada, jalankan di Terminal: xcode-select --install
+3. Jendela Terminal menampilkan dua alamat, misalnya:
+        http://192.168.1.10:8080     (biasa)
+        https://192.168.1.10:8443    (untuk OBROLAN SUARA / mikrofon)
+   Ketik salah satu di browser HP/tablet/laptop yang tersambung ke WiFi sama,
+   atau pindai kode QR di menu Orang Tua.
+4. Biarkan jendela Terminal terbuka selama anak bermain. Tutup untuk berhenti.
+
+Windows: klik dua kali "Mulai Pulau Balok (Windows).bat" (butuh Python dari
+Microsoft Store). Obrolan suara di Windows butuh program "openssl" (ikut
+terpasang bersama Git for Windows); tanpa itu, game tetap jalan tanpa suara.
+
+ALAMAT HTTPS & PERINGATAN KEAMANAN
+Browser hanya mengizinkan mikrofon di alamat https. Server membuat
+sertifikatnya sendiri, jadi muncul peringatan "koneksi tidak pribadi".
+Ini aman di WiFi rumah: pilih "Lanjutkan" / "Tampilkan detail > kunjungi
+situs ini". Cukup sekali per perangkat. Tanpa mikrofon, alamat http biasa
+sudah cukup.
+
+MASUK & DATA PEMAIN
+- Saat membuka game, pilih nama pemain. Pemain baru: tulis nama dan pilih
+  karakter laki-laki atau perempuan.
+- Semua data (bintang, kristal, topi, tingkat, skor) disimpan di komputer
+  yang menjalankan server: folder data/pulau-balok.db (SQLite). Jadi data
+  sama di semua perangkat. Pindah perangkat? Cukup pilih nama yang sama.
+- Satu nama hanya aktif di satu perangkat. Jika dibuka di perangkat lain,
+  perangkat lama otomatis keluar (data tetap aman).
+- Jika server mati, game tetap bisa dimainkan sendiri; data disimpan
+  sementara di perangkat dan dikirim ke server saat tersambung lagi.
+
+ORANG TUA IKUT BERMAIN
+- Di layar "Siapa yang main?", ketuk "+ Orang tua", jawab soal hitung,
+  pilih Ayah / Ibu / Kakek / Nenek / Paman / Bibi, lalu isi nama.
+  Contoh: Ayah + "Ali" tampil sebagai "Ayah Ali".
+- Profil orang tua bertanda gembok dan selalu diverifikasi dengan soal
+  hitung setiap kali masuk. Profil anak langsung bisa dipakai.
+
+MAIN BERSAMA
+- Semua pemain terlihat di pulau, dengan nama di atas kepala. Ketuk teman
+  untuk menyapa. Tombol 😀 untuk emotikon beranimasi, tombol mikrofon untuk
+  berbicara (suara teman yang jauh terdengar lebih pelan).
+- Mendekati tempat bermain memunculkan tombol "Masuk" di kanan; anak
+  masuk hanya bila menekannya.
+- Setiap tempat bermain = satu ruang. Yang pertama masuk menjadi tuan
+  rumah dan menekan "Mulai!" (boleh menunggu teman datang dulu).
+- Teman yang datang terlambat langsung ikut ronde yang sedang berjalan,
+  dengan soal yang sama persis.
+- Ronde bersama mirip Gartic: semua menjawab dulu, lalu jawaban yang benar
+  dan siapa yang benar dibuka di layar masing-masing.
+  Kuis: satu jawaban per anak. Balapan (warna, musik, kartu, ukuran,
+  menulis, puzzle): siapa selesai lebih dulu. Studio Gambar: semua gambar
+  dipamerkan bersama.
+- Jika semua pemain pergi, sesi di tempat itu selesai dan skor tersimpan.
+  Yang datang berikutnya memulai sesi baru dengan soal baru.
+- Setiap tempat punya papan JUARA (Top 3) yang sama di semua perangkat.
+- Soal diacak dan diingat: soal yang baru keluar tidak diulang saat kembali.
+
+KAMERA & KONTROL (seperti game PUBG)
+- Sentuh di mana saja pada layar kiri: joystick muncul di bawah jempol.
+  Geser layar kanan = melihat sekeliling. Cubit dua jari / roda mouse = zoom.
+- Kamera tidak pernah zoom sendiri; jaraknya hanya berubah bila pemain
+  mengganti sudut atau zoom.
+- Tombol 🔄 memutar layar: Otomatis / Miring / Tegak (Android/Chrome).
+  iPhone/iPad tidak mengizinkan game memutar layar; putar perangkat
+  langsung dan matikan kunci rotasi di Pusat Kontrol.
+- Tombol kamera mengganti sudut: Seluruh badan, Jauh, Dari atas,
+  Mata (tangan saja, seperti Minecraft), Dekat.
+- Tombol peta: pindah cepat ke tempat bermain mana pun.
+- Laptop: W A S D / panah untuk berjalan, spasi untuk lompat, Q/E memutar,
+  F / Enter untuk Masuk.
+
+17 TEMPAT BERMAIN
+Kebun Hitung (berhitung), Rumah Warna (warna & ukuran), Kandang Hewan
+(nama, bunyi, huruf awal), Menara Pola (pola), Taman Bentuk (bentuk),
+Kolam Ikan (banyak/sedikit), Panggung Musik (ingat urutan nada), Kartu
+Kembar (daya ingat), Tangga Ukuran (urutkan pendek-tinggi), Rumah Perasaan
+(mengenal emosi), Rumah Menulis (menebalkan garis, angka, huruf), Warung
+Hitung (tambah & kurang), Studio Gambar (bebas atau ikuti contoh),
+Taman Puzzle (menyusun gambar), Rumah Huruf, Pondok Angka, Surau Iqro'.
+
+VARIASI SUPAYA TIDAK MONOTON
+Tiap tempat mengacak beberapa jenis permainan, misalnya:
+  Kebun Hitung: petik / hitung / hitung kilat (buah ditutup kain)
+  Rumah Warna: antar balok ke rumahnya / cari semua balok berwarna tertentu
+  Kandang Hewan: cari hewan / siapa yang hilang? (daya ingat)
+  Menara Pola: lanjutkan pola / balok hilang di tengah pola
+  Taman Bentuk: cari bentuk / benda sehari-hari (🍕 bentuknya apa?)
+  Kolam Ikan: bandingkan ember / pancing tepat N ikan
+  Kartu Kembar: gambar sama / angka & titik / huruf besar & kecil
+  Tangga Ukuran: urutkan / mana yang paling tinggi atau pendek
+  Rumah Perasaan: tebak perasaan / kejadian mana yang membuat senang
+  Warung Hitung: tambah-kurang / ayo bayar dengan koin
+  Rumah Huruf: baca huruf-kata / huruf awal (🐱 ?UCING)
+  Pondok Angka: baca angka / hitung gambar lalu sebutkan
+
+SUPAYA MUDAH & SERU
+- Bantuan otomatis: kalau anak diam sekitar 12 detik, Kak Rara memberi
+  petunjuk dan jawaban yang benar melompat-lompat (tidak di kuis bersama).
+- Combo 🔥: benar berturut-turut tanpa salah; tiap 3 kali dapat bonus bintang.
+- Sesi: setiap 5 ronde di satu tempat ada perayaan + bonus 2 bintang.
+- Tingkat awal Rumah Warna: rumah yang cocok ikut melompat saat balok dipilih.
+
+MEMBACA DENGAN SUARA (Rumah Huruf, Pondok Angka, Surau Iqro')
+- Kak Rara menampilkan huruf/angka/bacaan. Anak MENAHAN tombol 🎤 sambil
+  membaca keras, lalu melepasnya untuk mengirim jawaban (seperti pesan
+  suara WhatsApp). Game mencocokkan jawabannya. Tiap ronde 3 soal.
+  Huruf: huruf > suku kata > kata > kalimat pendek.
+  Angka: 1-10 > 11-20 > 21-99 > 100-999.
+  Iqro': berfathah (jilid 1) > bersambung (jilid 2) > fathah/kasrah/
+  dhammah (jilid 3) > bacaan campuran.
+- Salah sekali: diminta mengulang. Salah dua kali: Kak Rara mencontohkan,
+  anak menirukan, dan usahanya diterima.
+- Suara anak hanya dipakai untuk mencocokkan jawaban, TIDAK dikirim ke
+  pemain lain; obrolan suara otomatis dimatikan selama di tempat ini.
+- Pengenal suara butuh: alamat https (https://…:8443) dan browser Chrome/
+  Edge/Safari. Di Chrome/Android juga butuh INTERNET (suara diproses
+  layanan Google); Safari memakai layanan Apple.
+- Tanpa itu, game memakai mode cadangan: anak membaca keras, lalu
+  mengetuk "Dengar jawaban" dan menilai sendiri (sebaiknya didampingi).
+
+MISI & PETUALANGAN
+- Misi utama: kumpulkan poin di tempat mana pun yang disukai dan jadilah
+  juara satu di papan JUARA. Chip di layar menunjukkan total poin dan di
+  berapa tempat kamu juara (lencana 🥇 juga tampil di peta). Tidak wajib
+  menuntaskan semua tempat.
+- Pulau sangat luas; tempat-tempat bermain berjauhan, dihubungkan jalan.
+- Koleksi (tidak wajib): main 3 ronde di satu tempat = 1 Kristal Pelangi
+  + 1 topi baru. Kristal
+menyala di Menara Kristal di tengah pulau. Tiap bab selesai membuka peti
+harta: Bab 1 Topi Bajak Laut, Bab 2 Helm Astronot, Bab 3 Topi Pesulap,
+Bab 4 Mahkota Pelangi dan pelangi di langit. Kak Rara menemani lewat suara dan teks saja.
+Panah kuning dan sorot cahaya menunjukkan misi berikutnya.
+
+MENARA LANGIT (🗼, sisi barat pulau)
+- Menara 20 lantai (160 meter), tanpa zombie. Jalurnya tangga memutar
+  yang cukup DIJALANI (tidak wajib melompat), diselingi jembatan.
+- Hanya untuk yang punya nyawa minimal 1. Gerbang merah tertutup bila
+  nyawa 0; isi nyawa dulu dengan belajar 1 ronde (siang) atau beli di toko.
+- SETIAP LANTAI punya stan dengan kakak penjaga dan kuis bertema (berhitung,
+  huruf, warna, bentuk, hewan, buah, tambah, kurang, besar-kecil, urutan
+  angka). Makin tinggi lantainya, angkanya makin besar. Jawaban benar = +1 ⭐.
+  Ada juga bangku, tanaman, dan karpet.
+- Lantai yang sudah dicapai otomatis menjadi titik mulai bila jatuh.
+  Jatuh sebelum mencapai lantai 3: nyawa TIDAK berkurang. Mulai lantai 3
+  ke atas: jatuh = nyawa berkurang 1. Bila nyawa habis karena jatuh,
+  pemain dikeluarkan ke depan gerbang.
+- RINTANGAN BERTAMBAH SESUAI LEVEL (diatur di menu Orang Tua; Otomatis =
+  mengikuti kemampuan anak):
+    Level 1  : pagar di kedua sisi jalur (tidak bisa jatuh), tanpa
+               rintangan: cukup berjalan sampai puncak.
+    Level 2  : pagar kedua sisi, ditambah cacing raksasa (tanah bergetar
+               dulu, tunggu cacingnya menyelam).
+    Level 3  : pagar sisi luar saja, ditambah palang berputar (lompati)
+               dan sebagian anak tangga berkedip lalu hilang sebentar.
+    Level 4  : tanpa pagar, ditambah pendorong besi dan lebih banyak anak
+               tangga berkedip.
+- PUNCAK (lantai 20): ucapan selamat + hadiah acak (bintang, koin, amunisi,
+  atau nyawa). Pertama kali sampai puncak juga mendapat Helm Pendaki.
+  Teman lain diberi tahu. Injak lingkaran biru di puncak untuk turun cepat.
+- Chip biru di atas layar menunjukkan ketinggian dan lantai (mis. 7/20).
+- TERBANG DENGAN SAYAP MALAIKAT 🪽: di puncak ada papan merah-putih. Jalan
+  sampai ujung lalu lompat: jatuh sebentar, lalu sayap malaikat terbuka
+  (atau tekan tombol lompat untuk membukanya lebih cepat). Lalu TERBANG:
+  karakter terus melaju ke depan dan turun sangat pelan. Joystick kiri/kanan
+  = berbelok (badan ikut miring), joystick ke depan = lebih cepat, ke
+  belakang = melayang paling pelan. Kamera otomatis mengikuti dari belakang.
+  Mendarat tidak mengurangi nyawa.
+- LIFT KE PUNCAK 🛗: lift kaca di samping menara (sisi selatan, di luar
+  pagar). Berdiri di dalam kabin, ketuk tombol "Naik ke puncak · 🪙 10".
+  Koin kurang = lift tidak bisa dipakai. Di puncak ada jembatan ke lantai
+  teratas; lift turun lagi sendiri setelah 7 detik (turun gratis).
+  Naik lift tidak mendapat hadiah puncak (hadiah hanya untuk yang mendaki).
+
+KONTROL DI HP/TABLET
+- Kiri: joystick untuk berjalan (sentuh di mana saja di setengah kiri).
+- Kanan: joystick 👁️ di pojok kanan bawah untuk memutar pandangan (bisa
+  juga sentuh di mana saja di setengah kanan; makin jauh digeser, makin
+  cepat kamera berputar). Tombol lompat & emotikon ada di atasnya.
+  Geser ke atas untuk mendongak sampai melihat langit / puncak menara.
+- Tombol ⬆ lompat bisa ditekan sambil berjalan; ditahan = terus melompat.
+  Karakter juga melompat otomatis saat berjalan ke pijakan yang lebih
+  tinggi.
+
+TEMPAT JALAN-JALAN (tanpa soal; untuk menjelajah)
+- TRAMPOLIN RAKSASA 🤸 (selatan pulau): dua trampolin besar. Naik ke
+  matras dan memantul otomatis; tahan tombol lompat supaya memantul lebih
+  tinggi (sampai ±8 meter). Ada Rina dan Bima yang ikut melompat.
+- KANTIN: pilih makanan di Bu Sari, lalu tunggu bar "Makan…" sampai penuh
+  (±5 detik, jangan berjalan). Selesai makan nyawa bertambah ½ ❤️.
+  Setelah makan, anak "kenyang" selama 2 menit.
+- BERENANG 🏊: di laut sekitar dermaga anak bisa berenang (lompat dari
+  dermaga atau jalan dari pantai). Naik lagi dengan berjalan ke pantai
+  atau ke dermaga (melompat otomatis).
+- Sekolah 🏫 (2 lantai, papan tulis, perpustakaan, tiang bendera),
+  Kantin 🍜, Gedung Tinggi 🏢 (4 lantai + atap, ada tangga dan LIFT yang
+  berhenti di tiap lantai; pintu lift hanya terbuka saat lift ada),
+  Rumah Nenek 🏡 (2 rumah dengan kamar, kasur, sofa), Gunung ⛰️ (±17 m,
+  didaki lewat 34 teras batu sampai puncak bersalju, ada air terjun), dan Kapal ⛵
+  di dermaga: naik saat berlabuh, kapal berlayar keliling laut ±30 detik
+  lalu kembali. Semua ada di peta 🗺️ dan bisa dituju langsung.
+- Atap bangunan otomatis tersembunyi saat pemain masuk, supaya isinya
+  terlihat. Kasur, meja, dan bangku bisa dinaiki dengan melompat.
+
+WARGA PULAU (NPC)
+- Lebih dari 40 warga: Pak Budi (guru), Sinta, Bu Sari (kantin), Dodi, Pak Joko
+  (satpam gedung), Nenek Ijah, Tono, Mimi, Kak Gilang (pendaki), Kapten
+  Bahar, Kak Dimas (pemandu menara), Pak Ujang (penjaga taman), Pak Darto
+  (nelayan), Pak Didi (penjual balon), Bu Ani (penjual es krim), Kakek
+  Hasan (duduk di bangku dekat air mancur), Om Rudi & Tante Lia (lari pagi),
+  Ari, Lulu, Rina, Bima, Pak Karyo (petani), Pak Pos, Dokter Hana, dan
+  kakak penjaga di setiap lantai Menara Langit. Mereka diam di tempatnya atau jalan-jalan dekat rumahnya;
+  TIDAK mengikuti pemain.
+- Dekati lalu ketuk "💬 Ngobrol" (atau ketuk orangnya). Ada yang memberi
+  kuis kecil (hitung, huruf depan, warna, bentuk): jawaban benar = +1 ⭐
+  (paling banyak 1 bintang per warga tiap menit). Bu Sari menawarkan
+  makanan, Kapten Bahar memberi tahu jadwal kapal, Kak Dimas menjelaskan
+  aturan menara.
+
+SIANG, MALAM & ZOMBIE
+- Siang dan malam berganti otomatis (bawaan: siang 15 menit, malam 5 menit),
+  sama di semua perangkat. Saat malam, lampu-lampu menyala.
+- 1 menit sebelum malam ada peringatan (suara, bunyi, hitung mundur).
+- Saat malam, zombie kartun keluar dari air mancur di tengah pulau dan
+  mendekati pemain. Makin menjelang pagi, makin banyak. Saat pagi, semua
+  zombie hilang. Zombie tidak bisa naik ke atap, menara, atau gunung, dan
+  tidak menembus dinding bangunan.
+- ZONA AMAN BERGILIR: saat malam hanya beberapa tempat bermain yang aman
+  (cincin hijau menyala + sorot cahaya hijau), dipilih acak dan berpindah
+  tiap beberapa saat. Papan JUARA tiap tempat menunjukkan "AMAN 0:42" atau
+  "TIDAK AMAN". Panah kuning menunjuk zona aman terdekat. Tempat yang
+  tidak aman tidak bisa dimasuki; yang sedang belajar di sana diberi
+  peringatan lalu dikeluarkan setelah 8 detik.
+- NYAWA HABIS: tidak bangun otomatis. Saat malam, pemain menonton pemain
+  lain (◀ ▶ untuk ganti) sampai membeli nyawa di toko atau pagi tiba.
+  Siang hari: cukup selesaikan 1 ronde belajar di tempat mana pun, nyawa
+  otomatis terisi 1 (hanya jika nyawa sedang 0), jadi siap untuk malam
+  berikutnya. Nyawa tambahan bisa dibeli di toko.
+- Jika SEMUA pemain kehabisan nyawa, zombie hanya berkeliaran selama waktu
+  istirahat (bawaan 30 detik), lalu pagi datang.
+- Pemain bisa memukul (👊) dan menembak (🔫) dengan senjata mainan.
+  Kekuatan zombie mengikuti tingkat kesulitan tiap pemain: tingkat Mudah
+  mengalahkan zombie lebih cepat dan terluka lebih sedikit.
+- Laptop: J = pukul, K = tembak.
+- Tembakan membidik otomatis zombie terdekat (dari arah mana pun) dan
+  pelurunya mengejar zombie itu, jadi anak tidak perlu membidik.
+- Saat semua pemain berlindung di zona aman, zombie tidak kembali ke air
+  mancur, tetapi terus berkeliaran di sekitar pulau.
+- Tombol pukul 👊 juga ada di siang hari. Memukul teman hanya main-main:
+  teman terdorong sedikit dan ada bunyi "duk", nyawa TIDAK berkurang.
+  Tombol tembak hanya muncul saat malam.
+
+TOKO (🛒)
+- Bintang ⭐ dari belajar ditukar menjadi koin 🪙 (1 bintang = 5 koin).
+  Mengalahkan zombie juga memberi 1 koin.
+- Koin untuk membeli senjata (pedang kayu, palu mainan, ketapel, pistol
+  air, blaster gelembung, meriam konfeti), amunisi, dan nyawa.
+
+ATUR DUNIA (khusus akun orang tua)
+- Tombol 🌗 (hanya muncul untuk Ayah/Ibu/Kakek/Nenek/Paman/Bibi): jadikan
+  malam/siang sekarang, atau tambah 5/10 zombie. Selalu diverifikasi soal.
+- Di menu Orang Tua: lama siang, lama malam, jumlah zona aman, seberapa
+  sering zona aman berpindah, lama istirahat bila semua kehabisan nyawa,
+  siang-malam otomatis nyala/mati, dan zombie nyala/mati.
+
+SUARA KAK RARA
+Game memakai suara bawaan perangkat; kualitasnya tergantung suara yang
+terpasang. Pilih suara di menu Orang Tua (ada tombol Tes). Paling alami:
+- iPad/iPhone/Mac: Pengaturan > Aksesibilitas > Konten Lisan > Suara >
+  Indonesia > unduh "Damayanti (Ditingkatkan/Premium)".
+- Windows: buka game di Microsoft Edge, pilih "Gadis Online (Natural)".
+- Android/Chrome: "Google Bahasa Indonesia" (butuh internet).
+
+MENU ORANG TUA (ikon gembok, jawab soal hitung)
+- Pemain: tingkat kesulitan (Otomatis/Mudah/Sedang/Sulit/Sangat sulit)
+  dan batas main per hari untuk SETIAP pemain. Berlaku di semua tempat
+  bermain dan semua perangkat. Pemain yang tidak sedang main bisa dihapus.
+- Main bersama: maksimal pemain di satu tempat bermain.
+- Perkembangan tiap pemain di tiap tempat.
+- Perangkat ini: suara Kak Rara, kecepatan suara, efek bunyi, obrolan
+  suara, grafis ringan, dan kode QR.
+
+Sesekali muncul kartu "Main bersama Ayah/Bunda": tugas kecil di dunia
+nyata. Mohon didampingi.
+
+Tidak ada iklan dan tidak ada pembelian. Semua permainan berjalan di WiFi
+rumah tanpa internet, KECUALI pengenal suara di Chrome/Android (lihat
+bagian Membaca dengan suara).
