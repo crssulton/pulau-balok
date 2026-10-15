@@ -185,6 +185,9 @@ MENARA LANGIT (🗼, sisi barat pulau)
   Naik lift tidak mendapat hadiah puncak (hadiah hanya untuk yang mendaki).
 
 KONTROL DI HP/TABLET
+- Ikon kiri atas: rumah, peta, toko, ganti baju, 😀 emotikon, dan 🏆 misi
+  (ketuk 🏆 untuk mendengar poin dan misi). Info kecil (zona aman, lantai
+  menara, waktu sewa, makan) tampil di kolom kiri, bukan di tengah layar.
 - Kiri: joystick untuk berjalan (sentuh di mana saja di setengah kiri).
 - Kanan: joystick 👁️ di pojok kanan bawah untuk memutar pandangan (bisa
   juga sentuh di mana saja di setengah kanan; makin jauh digeser, makin
@@ -202,8 +205,31 @@ TEMPAT JALAN-JALAN (tanpa soal; untuk menjelajah)
   (±5 detik, jangan berjalan). Selesai makan nyawa bertambah ½ ❤️.
   Setelah makan, anak "kenyang" selama 2 menit.
 - BERENANG 🏊: di laut sekitar dermaga anak bisa berenang (lompat dari
-  dermaga atau jalan dari pantai). Naik lagi dengan berjalan ke pantai
-  atau ke dermaga (melompat otomatis).
+  dermaga atau jalan dari pantai). Batasnya ditandai garis pelampung
+  merah-putih bertali kuning; ada Kak Rani, penjaga pantai. Naik lagi dengan
+  berjalan ke pantai atau ke dermaga (melompat otomatis).
+- SEWA ATV 🛵 (utara pulau, Bang Toni): 🪙 10 untuk 3 menit. Berdiri di
+  depan tempat sewa, ketuk "Sewa ATV". Joystick depan = jalan, belakang =
+  mundur, kiri/kanan = belok; kamera mengikuti dari belakang. Bisa keliling
+  pulau dan naik gunung, tapi tidak bisa masuk menara atau rumah.
+- SEWA JETSKI 🚤 (pantai timur, Kak Bayu): 🪙 15 untuk 3 menit. Jetski hanya
+  di laut dan bisa mengelilingi pulau; tidak boleh masuk area berenang.
+- BANDARA ✈️ (laut tenggara; jalan lewat tangga & jembatan dari pantai):
+  sewa pesawat di loket Kapten Andre, 🪙 20 untuk 2 menit. Ketuk "Terbang!",
+  pesawat melaju di landasan lalu lepas landas. Joystick kiri/kanan =
+  belok, atas = naik, bawah = turun. Pesawat tidak bisa jatuh atau
+  menabrak (tinggi aman otomatis di atas pohon, gunung, dan menara; bila
+  terlalu jauh, pesawat berbelok pulang sendiri). Ketuk "Mendarat" atau
+  tunggu waktu habis: pesawat mendarat dan pemain kembali ke terminal.
+- NAIK BERSAMA: ATV dan jetski muat 2 orang (pengemudi + 1 teman); pesawat
+  muat 4 orang (pilot + 3 teman).
+  Dekati teman yang sudah menyewa (jetski: dari pantai tempat sewa;
+  pesawat: saat masih di landasan), ketuk "🙋 Ikut naik bersama …".
+  Penumpang gratis, duduk di belakang, dan bisa ketuk "Turun" kapan saja.
+  Bila pengemudi selesai, penumpang ikut turun.
+- Sisa waktu sewa tampil di chip merah atas layar (peringatan 30 detik
+  terakhir). Ketuk "Selesai" untuk berhenti lebih awal. Saat waktu habis
+  pemain turun otomatis (jetski: kembali ke pantai tempat sewa).
 - Sekolah 🏫 (2 lantai, papan tulis, perpustakaan, tiang bendera),
   Kantin 🍜, Gedung Tinggi 🏢 (4 lantai + atap, ada tangga dan LIFT yang
   berhenti di tiap lantai; pintu lift hanya terbuka saat lift ada),
@@ -248,6 +274,13 @@ SIANG, MALAM & ZOMBIE
   Siang hari: cukup selesaikan 1 ronde belajar di tempat mana pun, nyawa
   otomatis terisi 1 (hanya jika nyawa sedang 0), jadi siap untuk malam
   berikutnya. Nyawa tambahan bisa dibeli di toko.
+- SAAT MALAM SEMUA BANGUNAN DITUTUP: menara, sekolah, kantin, gedung,
+  rumah, gunung (bagian atas), bandara, laut (berenang/kapal) tidak bisa
+  dipakai. Pemain yang ada di sana otomatis dipindah ke depan pintunya.
+  Tempat aman HANYA lingkaran zona aman yang hijau. Jetski & pesawat tutup
+  (yang sedang dipakai kembali); ATV tetap boleh (zombie tetap bisa
+  mengejar). Warga (NPC) pulang dan muncul lagi saat pagi; kantin, jetski,
+  dan bandara memasang papan "🌙 TUTUP".
 - Jika SEMUA pemain kehabisan nyawa, zombie hanya berkeliaran selama waktu
   istirahat (bawaan 30 detik), lalu pagi datang.
 - Pemain bisa memukul (👊) dan menembak (🔫) dengan senjata mainan.

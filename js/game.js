@@ -772,7 +772,7 @@ function walkTo(x, z, onArrive = null) {
   marker.position.set(x, player.y + 0.05, z); marker.visible = true; marker.scale.setScalar(1); marker.material.opacity = 0.9;
 }
 // lompat: boleh sesaat setelah meninggalkan pijakan, dan tombol yang ditekan sedikit terlalu cepat tetap dihitung
-function jump() { if (para.phase === 1) { openChute(); return; } player.jumpBuf = 0.2; tryJump(); }
+function jump() { if (para.phase === 1) { openChute(); return; } if (veh.kind === 'jetski' || veh.kind === 'plane' || ride) return; player.jumpBuf = 0.2; tryJump(); }
 function tryJump() {
   if (player.jumpBuf <= 0 || player.vy > 0 || !(player.onGround || player.coyote > 0)) return;
   player.vy = 8; player.onGround = false; player.coyote = 0; player.jumpBuf = 0; SFX.jump();
@@ -782,6 +782,8 @@ function teleport(x, z, y = 0) {
   SFX.warp(); burst(player.pos.clone().add(new THREE.Vector3(0, 1.5 + player.y, 0)), ['#ffffff', '#7cc8f5', '#ffd23a']);
   player.pos.set(x, 0, z); player.target = null; marker.visible = false; player.knock = null;
   player.y = y; player.vy = 0; player.peak = y; player.onGround = false; para.phase = 0;
+  if (veh.kind && !veh.ending) endRide('map');
+  if (ride && !veh.ending) leaveRide(true, true);
   burst(new THREE.Vector3(x, 1.5 + y, z), ['#ffffff', '#7cc8f5', '#ffd23a']);
 }
 
@@ -2774,7 +2776,7 @@ let nearZone = null, enterKey = '';
 const zoneCount = (z) => [...remotes.values()].filter((r) => r.zone === z.id).length;
 function checkZones() {
   let near = null;
-  if (!activeZone && playing && !paused() && !me.down) {
+  if (!activeZone && playing && !paused() && !me.down && !veh.kind && !ride) {
     let best = 7.2;
     for (const z of Object.values(zones)) { const d = Math.hypot(player.pos.x - z.cx, player.pos.z - z.cz); if (d < best) { best = d; near = z; } }
   }
@@ -2892,8 +2894,8 @@ const championOf = () => Object.keys(zones).filter((id) => tops[id]?.[0]?.name =
 function missionZone() { return null; } // tidak ada lagi lokasi wajib
 function updateMission() {
   const el = $('#mission'); const champ = championOf();
-  el.innerHTML = `<span class="e">🏆</span><b>${totalPoints()}</b><span>poin</span><span class="sep"></span><span class="e">🥇</span><span class="nm"></span>`;
-  el.querySelector('.nm').textContent = champ.length ? `juara di ${champ.length} tempat` : 'ayo jadi juara!';
+  el.innerHTML = '<span class="e">🏆</span>';
+  el.setAttribute('aria-label', `Misi: ${totalPoints()} poin, ${champ.length ? `juara di ${champ.length} tempat` : 'ayo jadi juara'}`);
 }
 function tellMission() {
   const champ = championOf().map((id) => zones[id].name);
@@ -2983,7 +2985,7 @@ let moveTick = 0, lastMove = '';
 function sendMove(dt) {
   if (!net.online || !net.id) return;
   moveTick += dt; if (moveTick < 0.1) return; moveTick = 0;
-  const m = { x: +player.pos.x.toFixed(2), z: +player.pos.z.toFixed(2), y: +player.y.toFixed(2), f: +player.facing.toFixed(2), m: player.moving ? 1 : 0, p: para.phase || (swimming() ? 3 : 0) };
+  const m = { x: +player.pos.x.toFixed(2), z: +player.pos.z.toFixed(2), y: +player.y.toFixed(2), f: +player.facing.toFixed(2), m: player.moving ? 1 : 0, p: para.phase || vehCode() || (swimming() ? 3 : 0), pc: veh.pass.size };
   const k = JSON.stringify(m); if (k === lastMove) return; lastMove = k; send({ t: 'move', ...m });
 }
 function updateRemotes(dt) {
@@ -2991,7 +2993,7 @@ function updateRemotes(dt) {
     const root = r.ch.root, t = r.target;
     const dx = t.x - root.position.x, dz = t.z - root.position.z, d = Math.hypot(dx, dz);
     if (d > 20) root.position.set(t.x, 0, t.z); else { const k = 1 - Math.exp(-dt * 10); root.position.x += dx * k; root.position.z += dz * k; }
-    root.position.y = t.p === 3 ? (t.y || 0) - SWIM_DROP : t.y || 0;
+    root.position.y = (t.y || 0) + (t.p === 3 ? -SWIM_DROP : VEH_OFF[t.p] || 0);
     let rd = (t.f || 0) - root.rotation.y; rd = Math.atan2(Math.sin(rd), Math.cos(rd)); root.rotation.y += rd * Math.min(1, dt * 10);
     const moving = t.m || d > 0.05; r.phase = moving ? r.phase + dt * 11 : r.phase * Math.pow(0.001, dt);
     const sw = moving ? Math.sin(r.phase) * 0.7 : 0;
@@ -3178,7 +3180,7 @@ function onNet(m) {
     }
     case 'kicked': $('#kicked').hidden = false; modal = 'kicked'; stopNet(); break;
     case 'join': addRemote(m.p); if (playing) toast(`${m.p.name} datang! 👋`); break;
-    case 'leave': { const r = remotes.get(m.id); if (r && playing) toast(`${r.name} pulang`); removeRemote(m.id); break; }
+    case 'leave': { veh.pass.delete(m.id); const r = remotes.get(m.id); if (r && playing) toast(`${r.name} pulang`); removeRemote(m.id); break; }
     case 'move': { const r = remotes.get(m.id); if (r) r.target = m; break; }
     case 'pinfo': { const r = remotes.get(m.id); if (r) { r.avatar = m.avatar; applyAvatarTo(r.ch, m.avatar); } break; }
     case 'pzone': { const r = remotes.get(m.id); if (r) r.zone = m.zone; break; }
@@ -3188,6 +3190,11 @@ function onNet(m) {
       if (m.to === net.id) gotPoked(m, fr); else { const t = remotes.get(m.to); if (t) pokeFx(t.ch); }
       break;
     }
+    case 'ride': onRideReq(m); break;
+    case 'rideOk': startRide(m); break;
+    case 'rideNo': toast(`🙏 Kursinya sudah penuh (maksimal ${(SEATS[m.kind] || 1) + 1} orang).`); break;
+    case 'rideOff': if (veh.pass.delete(m.from)) { const r = remotes.get(m.from); toast(`${r ? r.name : 'Teman'} sudah turun`); } break;
+    case 'rideEnd': if (ride && ride.driver === m.from) leaveRide(false); break;
     case 'summit': { const r = remotes.get(m.id); const nm = r?.name || m.name; if (nm) { toast(`🏆 ${nm} sampai di puncak Menara Langit!`); if (r) startEmote(r.ch, r, '🎉'); } break; }
     case 'greet': { const r = remotes.get(m.from); if (r) { say(`${r.name} menyapamu! 👋 Sapa balik, yuk. Ketuk ${r.name}.`, { force: true }); startEmote(r.ch, r, '👋'); } break; }
     case 'voice': { const r = remotes.get(m.id); if (r) r.voice = m.on; break; }
@@ -4227,6 +4234,22 @@ function towerChip(dT) {
   if (t === climb.chip) return; climb.chip = t;
   const el = $('#towerChip'); el.hidden = !t; el.textContent = t;
 }
+// malam: bangunan, menara, gunung, laut & bandara ditutup. Satu-satunya tempat aman = lingkaran zona aman.
+function nightRules(dt, night) {
+  if (!night || me.down) return;
+  if (veh.kind === 'jetski' || veh.kind === 'plane') { endRide('night'); return; }
+  if (ride && ride.kind !== 'atv') { leaveRide(true, true); return; }
+  if (ride || performance.now() - (climb.kickAt || 0) < 1200) return;
+  const T = W.TOWER, x = player.pos.x, z = player.pos.z;
+  const inside = Math.hypot(x - T.x, z - T.z) < T.fence + 0.5 || W.inBuilding(x, z) || (player.onGround && player.y > 1.0) || swimming() || W.onShip(player);
+  if (!inside) return;
+  climb.kickAt = performance.now(); climb.cp = 0;
+  const sea = swimming() || W.onShip(player);
+  let best = null, bd = 1e9;
+  for (const p of Object.values(W.PLACES)) { if (sea && p !== W.PLACES.kapal) continue; const d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; best = p; } }
+  if (best) teleport(best.go[0], best.go[1], 0);
+  if (!climb.nightSaid || performance.now() - climb.nightSaid > 20000) { climb.nightSaid = performance.now(); say('Malam tiba! Bangunan, menara, dan laut ditutup. Tempat aman hanya di lingkaran zona aman yang hijau. Ayo ke sana!', { force: true }); }
+}
 function rideLift() {
   const price = W.LIFT.price;
   if ((save.coins || 0) < price) { SFX.soft(); say(`Koinmu belum cukup. Perlu ${price} koin. Tukar bintang jadi koin di Toko, ya! Atau mendaki tangga, gratis!`, { force: true }); return; }
@@ -4243,12 +4266,13 @@ function worldPlay(dt) {
   const fogK = Math.round(Math.max(0, player.y) / 4) * 4; // kabut menjauh saat pemain tinggi (pulau tetap terlihat dari puncak)
   if (fogK !== climb.fogK) { climb.fogK = fogK; scene.fog.near = 90 + fogK; scene.fog.far = 250 + fogK * 1.6; }
   // gerbang menara terbuka hanya bila nyawa minimal 1
-  const shut = hp < 1 || me.down, g = W.tower.gate;
+  const nightD = nightDanger(); W.setNight(worldSt.phase === 'night');
+  const shut = hp < 1 || me.down || nightD, g = W.tower.gate;
   if (g.on !== shut) { g.on = shut; g.mesh.visible = shut; }
   const dT = Math.hypot(player.pos.x - T.x, player.pos.z - T.z);
   climb.warnT -= dt;
   if (shut && dT > T.fence - 0.5 && dT < T.fence + 3 && Math.abs(Math.atan2(player.pos.z - T.z, player.pos.x - T.x)) < 0.35 && climb.warnT <= 0) {
-    climb.warnT = 9; say('Gerbang menara tertutup karena nyawamu habis. Belajar dulu di tempat bermain supaya dapat nyawa, lalu kembali ke sini, ya!', { force: true });
+    climb.warnT = 9; if (nightD) say('Menara ditutup saat malam. Cari lingkaran zona aman yang hijau, ya!', { force: true }); else say('Gerbang menara tertutup karena nyawamu habis. Belajar dulu di tempat bermain supaya dapat nyawa, lalu kembali ke sini, ya!', { force: true });
   }
   if (dT < T.fence + 0.5) {
     if (player.onGround) for (const f of W.tower.floors) {
@@ -4267,8 +4291,23 @@ function worldPlay(dt) {
     }
   } else if (player.y < 1) climb.cp = 0;
   towerChip(dT);
+  nightRules(dt, nightD);
+  // tempat sewa ATV / jetski
+  const rk = modal ? null : nearRental();
+  if (rk !== (climb.rentBtn ?? null)) {
+    climb.rentBtn = rk;
+    if (rk) { const r = W.RENT[rk]; showAction(`${r.emoji} Sewa ${r.name} · 🪙 ${r.price} · ${r.min} menit`, () => rent(rk)); }
+    else if (!activeZone && !veh.kind && !ride && !climb.liftBtn && !climb.joinBtn) hideAction();
+  }
+  // ikut naik kendaraan teman
+  const dr = modal ? null : nearDriver(), jid = dr ? dr.id : null;
+  if (jid !== (climb.joinBtn ?? null)) {
+    climb.joinBtn = jid;
+    if (dr) showAction(`🙋 Ikut naik bersama ${dr.name}`, () => askRide(dr));
+    else if (!activeZone && !veh.kind && !ride && !climb.rentBtn && !climb.liftBtn) hideAction();
+  }
   // lift ke puncak: bayar koin
-  const wantLift = W.onLift(player) && W.LIFT.state === 'idle' && !modal;
+  const wantLift = W.onLift(player) && W.LIFT.state === 'idle' && !modal && !nightD;
   if (wantLift !== !!climb.liftBtn) { climb.liftBtn = wantLift; if (wantLift) { showAction(`🛗 Naik ke puncak · 🪙 ${W.LIFT.price}`, rideLift); say(`Mau naik lift ke puncak? Harganya ${W.LIFT.price} koin. Ketuk tombolnya!`); } else if (!activeZone) hideAction(); }
   // rintangan menara mendorong pemain (bisa membuat jatuh)
   me.knockCd = Math.max(0, (me.knockCd || 0) - dt);
@@ -4292,6 +4331,149 @@ function worldPlay(dt) {
     }
   }
 }
+/* ---------- kendaraan sewaan: ATV (darat) & jetski (laut) ---------- */
+const veh = { kind: null, until: 0, v: 0, yaw: 0, mesh: null, warned: false, spray: 0, ending: false, pass: new Map(), fl: null, climb: 0, bank: 0 };
+// kode pose/kendaraan yang dikirim ke teman: 4 ATV, 5 jetski, 8 pesawat (pengemudi); 6/7/9 = penumpangnya
+const VEH_P = { atv: 4, jetski: 5, plane: 8 }, PASS_P = { atv: 6, jetski: 7, plane: 9 }, P_KIND = { 4: 'atv', 5: 'jetski', 8: 'plane', 6: 'atv', 7: 'jetski', 9: 'plane' };
+const VEH_OFF = { 4: 0.18, 5: -1.0, 8: 0, 6: 0.3, 7: -0.9, 9: 0 }, VEH_MESH_Y = { 4: -0.18, 5: 0.4, 8: 0 }, VEH_MESH_Z = { 4: 0, 5: 0, 8: -1.2 };
+const SEAT_BACK = { atv: 0.75, jetski: 0.8, plane: 1.0 };
+const SEATS = { atv: 1, jetski: 1, plane: 3 }; // jumlah penumpang (selain pengemudi): ATV & jetski 2 orang, pesawat 4 orang
+const makeVehMesh = (code) => (code === 4 ? W.makeATV() : code === 5 ? W.makeJetski() : W.makePlane());
+const vehCode = () => (veh.kind ? VEH_P[veh.kind] : ride ? PASS_P[ride.kind] : 0);
+let ride = null; // menumpang kendaraan teman: { driver, kind }
+function nearRental() {
+  if (veh.kind || ride) return null;
+  for (const [k, r] of Object.entries(W.RENT)) if (r.x != null && Math.abs(player.y - (r.y ?? 0.12)) < 1 && Math.hypot(player.pos.x - r.x, player.pos.z - r.z) < 2.6) return k;
+  return null;
+}
+function rent(kind) {
+  const r = W.RENT[kind];
+  if (kind !== 'atv' && nightDanger()) { SFX.soft(); say(`Penyewaan ${r.name} tutup saat malam. Buka lagi besok pagi, ya!`, { force: true }); return; }
+  if ((save.coins || 0) < r.price) { SFX.soft(); say(`Koinmu belum cukup. Sewa ${r.name} perlu ${r.price} koin. Tukar bintang jadi koin di Toko, ya!`, { force: true }); return; }
+  save.coins -= r.price; persist(); updateVitals(); floatText(`-${r.price} 🪙`); hideAction(); climb.rentBtn = null;
+  if (kind === 'jetski') { const [x, z] = r.water; teleport(x, z, -0.35); }
+  if (kind === 'plane') { const [x, z] = r.start; teleport(x, z, r.top); }
+  veh.pass.clear();
+  Object.assign(veh, { kind, until: Date.now() + r.min * 60000, v: 0, yaw: kind === 'jetski' ? r.yaw + Math.PI / 2 : r.yaw, warned: false, climb: 0, bank: 0, fl: kind === 'plane' ? { phase: 'ready' } : null });
+  const code = VEH_P[kind]; veh.mesh = makeVehMesh(code); veh.mesh.position.set(0, VEH_MESH_Y[code], VEH_MESH_Z[code]); player.ch.root.add(veh.mesh);
+  player.facing = veh.yaw; view.yaw = veh.yaw + Math.PI;
+  tone(110, 0.4, { type: 'sawtooth', slide: 1.8, vol: 0.05 });
+  if (kind === 'plane') { showAction('🛫 Terbang!', takeoff); say('Selamat datang di pesawat! Teman boleh ikut naik dulu. Kalau sudah siap, ketuk tombol Terbang!', { force: true }); }
+  else { showAction('⏹️ Selesai', () => endRide('done')); say(kind === 'atv' ? 'Brum brum! Joystick ke depan untuk jalan, ke kiri dan kanan untuk belok. Teman bisa ikut naik di belakang!' : 'Wuuush! Jetski siap! Kelilingi pulau lewat laut. Jangan masuk area berenang, ya!', { force: true }); }
+}
+function takeoff() {
+  if (veh.kind !== 'plane' || veh.fl.phase !== 'ready') return;
+  veh.fl.phase = 'roll'; showAction('🛬 Mendarat', () => endRide('done'));
+  tone(90, 1.2, { type: 'sawtooth', slide: 2.5, vol: 0.05 }); say('Lepas landas! Joystick kiri dan kanan untuk belok, ke atas untuk naik, ke bawah untuk turun.', { force: true });
+}
+function endRide(reason) {
+  if (!veh.kind) return; const r = W.RENT[veh.kind], k = veh.kind;
+  for (const id of veh.pass.keys()) send({ t: 'rideEnd', to: id }); veh.pass.clear();
+  veh.kind = null; veh.v = 0; veh.fl = null; if (veh.mesh) player.ch.root.remove(veh.mesh); veh.mesh = null; hideAction(); $('#vehChip').hidden = true;
+  if ((k === 'jetski' || k === 'plane') && reason !== 'map') { veh.ending = true; const [x, z] = r.back; teleport(x, z, k === 'plane' ? r.top : 0.12); veh.ending = false; }
+  if (reason === 'night') say(`Malam tiba! ${r.name} harus kembali. Cari lingkaran zona aman, ya!`, { force: true });
+  else if (reason === 'time') say(k === 'plane' ? 'Waktu terbang habis. Pesawat sudah mendarat dengan selamat di bandara!' : `Waktu sewa ${r.name} habis. Terima kasih sudah menyewa! Mau lagi? Sewa lagi di tempat penyewaan, ya.`, { force: true });
+  else if (reason === 'done') say(k === 'plane' ? 'Pesawat mendarat dengan selamat. Terima kasih sudah terbang!' : `Terima kasih sudah naik ${r.name}!`, { force: true });
+}
+function steerCam(dt) { if (look.id === null && !view.dragging) { let d = veh.yaw + Math.PI - view.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); view.yaw += d * Math.min(1, dt * 2.5); } }
+// pesawat: siap -> melaju di landasan -> terbang (tidak bisa jatuh atau menabrak)
+function planeTick(dt, sx, sy) {
+  const fl = veh.fl, steer = clamp(sx, -1, 1), up = clamp(-sy, -1, 1);
+  if (fl.phase === 'ready') { veh.v = 0; return; }
+  if (fl.phase === 'roll') {
+    veh.v = Math.min(22, veh.v + 9 * dt); if (veh.v > 14) player.y += (veh.v - 14) * 0.9 * dt;
+    if (player.y > W.RENT.plane.top + 10) fl.phase = 'fly';
+  } else {
+    veh.yaw -= steer * 1.1 * dt; veh.bank += (steer * 0.6 - veh.bank) * Math.min(1, dt * 4);
+    veh.climb += (up * 9 - veh.climb) * Math.min(1, dt * 3); veh.v += (20 - veh.v) * Math.min(1, dt);
+    // tinggi aman: di atas pohon, gunung, dan menara
+    const M = W.MOUNT, T = W.TOWER;
+    let minY = 12; if (Math.hypot(player.pos.x - M.x, player.pos.z - M.z) < 16) minY = M.top + 8;
+    player.y = clamp(player.y + veh.climb * dt, minY, 150); if (player.y <= minY + 0.01 && veh.climb < 0) veh.climb = 0;
+    const td = Math.hypot(player.pos.x - T.x, player.pos.z - T.z);
+    if (td < 20 && player.y < T.N * T.H + 8) { const k = 20 / (td || 1); player.pos.x = T.x + (player.pos.x - T.x) * k; player.pos.z = T.z + (player.pos.z - T.z) * k; }
+    // jangan terlalu jauh: belok pelan kembali ke pulau
+    const pd = Math.hypot(player.pos.x, player.pos.z);
+    if (pd > 165) { const toC = Math.atan2(-player.pos.x, -player.pos.z); let d = toC - veh.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); veh.yaw += d * Math.min(1, dt * 1.2); }
+  }
+  player.pos.x += Math.sin(veh.yaw) * veh.v * dt; player.pos.z += Math.cos(veh.yaw) * veh.v * dt;
+  if (veh.mesh) { veh.mesh.rotation.z = -veh.bank; veh.mesh.rotation.x = -veh.climb * 0.03; veh.mesh.userData.prop.rotation.z += dt * 30; }
+}
+function vehicleTick(dt, sx, sy) {
+  player.facing = veh.yaw; player.target = null; marker.visible = false;
+  if (veh.kind === 'plane') { planeTick(dt, sx, sy); player.facing = veh.yaw; steerCam(dt); return; }
+  const jet = veh.kind === 'jetski', throttle = clamp(-sy, -1, 1), steer = clamp(sx, -1, 1), max = jet ? 15 : 12;
+  const want = throttle >= 0 ? throttle * max : throttle * 5;
+  veh.v += (want - veh.v) * Math.min(1, dt * (throttle ? 1.5 : 0.9));
+  veh.yaw -= steer * 1.9 * dt * clamp(veh.v / 4, -1, 1);
+  player.pos.x += Math.sin(veh.yaw) * veh.v * dt; player.pos.z += Math.cos(veh.yaw) * veh.v * dt;
+  player.facing = veh.yaw;
+  W.pushOut(player.pos, player.y, 0.9);
+  const pd = Math.hypot(player.pos.x, player.pos.z), e = edgeR(player.pos.x, player.pos.z);
+  if (jet) {
+    // jetski hanya di laut: tidak naik ke pantai, tidak terlalu jauh, tidak masuk area berenang
+    const lo = e + 1.5, hi = e + 22; if (pd < lo || pd > hi) { const k = clamp(pd, lo, hi) / pd; player.pos.x *= k; player.pos.z *= k; veh.v *= 0.6; }
+    const sx2 = player.pos.x - W.SWIM.x, sz2 = player.pos.z - W.SWIM.z, sd = Math.hypot(sx2, sz2), sr = W.SWIM.r + 1.5;
+    if (sd < sr) { player.pos.x = W.SWIM.x + (sx2 / sd) * sr; player.pos.z = W.SWIM.z + (sz2 / sd) * sr; veh.v *= 0.6; if (!climb.swimWarn || performance.now() - climb.swimWarn > 6000) { climb.swimWarn = performance.now(); toast('🏊 Ini area berenang. Jetski dilarang masuk!'); } }
+    if (Math.abs(veh.v) > 3 && (veh.spray -= dt) <= 0) { veh.spray = 0.15; burst(new THREE.Vector3(player.pos.x - Math.sin(veh.yaw) * 1.4, -0.6, player.pos.z - Math.cos(veh.yaw) * 1.4), ['#ffffff', '#bfe8ff']); }
+  } else {
+    pushTrees(player.pos, 1.0);
+    const lim = e - 2.2; if (pd > lim && !W.supported(player.pos.x, player.pos.z, player.y)) { player.pos.x *= lim / pd; player.pos.z *= lim / pd; veh.v *= 0.5; }
+    // ATV tidak boleh masuk menara
+    const T = W.TOWER, tx = player.pos.x - T.x, tz = player.pos.z - T.z, td = Math.hypot(tx, tz);
+    if (td < T.fence + 1.2) { player.pos.x = T.x + (tx / td) * (T.fence + 1.2); player.pos.z = T.z + (tz / td) * (T.fence + 1.2); veh.v *= 0.4; }
+    if (player.onGround && Math.abs(veh.v) > 1 && W.ledgeAhead(player.pos.x, player.pos.z, player.y, Math.sin(veh.yaw) * Math.sign(veh.v), Math.cos(veh.yaw) * Math.sign(veh.v)) !== null) player.jumpBuf = 0.05;
+  }
+  if (Math.abs(veh.v) > 1) steerCam(dt);
+}
+function vehicleClock() {
+  if (!veh.kind) return;
+  const left = Math.max(0, veh.until - Date.now()), r = W.RENT[veh.kind];
+  const el = $('#vehChip'); el.hidden = false; el.textContent = `${r.emoji} ${r.name}${veh.pass.size ? ` · 👥 ${veh.pass.size + 1}` : ''} · ⏱️ ${mmss(left)}`;
+  if (left < 30000 && !veh.warned) { veh.warned = true; toast(`⏱️ Waktu sewa ${r.name} tinggal 30 detik`); }
+  if (left <= 0 || me.down) endRide('time');
+}
+/* ---------- ikut naik kendaraan teman (maks. 2 orang: pengemudi + 1 penumpang) ---------- */
+function nearDriver() {
+  if (veh.kind || ride || me.down || activeZone) return null;
+  for (const r of remotes.values()) {
+    const t = r.target, c = t.p; if (!(c === 4 || c === 5 || c === 8) || (t.pc || 0) >= SEATS[P_KIND[c]]) continue;
+    const p = r.ch.root.position, d = Math.hypot(p.x - player.pos.x, p.z - player.pos.z);
+    // jetski: boleh naik dari pantai tempat sewa (jetski menunggu di dekatnya); pesawat: hanya saat masih di landasan
+    const range = c === 5 ? 14 : 3.6; if (d > range || (c !== 5 && Math.abs((t.y || 0) - player.y) > 1.6)) continue;
+    if (c === 8 && (t.y || 0) > W.RENT.plane.top + 0.5) continue;
+    return r;
+  }
+  return null;
+}
+function askRide(r) { send({ t: 'ride', to: r.id }); toast(`🙋 Minta ikut ${r.name}…`); }
+function onRideReq(m) {
+  const fr = remotes.get(m.from);
+  if (!veh.kind || veh.pass.size >= SEATS[veh.kind] || veh.pass.has(m.from)) { send({ t: 'rideNo', to: m.from, kind: veh.kind }); return; }
+  let seat = 0; while ([...veh.pass.values()].includes(seat)) seat++;
+  veh.pass.set(m.from, seat); send({ t: 'rideOk', to: m.from, kind: veh.kind, seat }); toast(`👥 ${fr ? fr.name : 'Teman'} ikut naik!`); SFX.good();
+}
+function startRide(m) {
+  const r = remotes.get(m.from); if (!r || veh.kind) return;
+  ride = { driver: m.from, kind: m.kind, seat: m.seat || 0 }; climb.joinBtn = null; hideAction(); showAction('⏹️ Turun', () => leaveRide(true));
+  SFX.good(); say(`Kamu ikut naik ${W.RENT[m.kind].name} bersama ${r.name}. Pegangan, ya!`, { force: true });
+}
+function leaveRide(tell, quiet = false) {
+  if (!ride) return; const k = ride.kind, d = ride.driver; ride = null; hideAction();
+  if (tell) send({ t: 'rideOff', to: d });
+  if (k === 'jetski' || k === 'plane') { const r = W.RENT[k]; veh.ending = true; teleport(r.back[0], r.back[1], k === 'plane' ? r.top : 0.12); veh.ending = false; }
+  else { player.vy = 0; player.onGround = false; player.peak = player.y; }
+  if (!quiet) say('Kamu sudah turun. Terima kasih sudah ikut!', { force: true });
+}
+// penumpang duduk di belakang pengemudi, mengikuti posisinya
+function rideTick() {
+  if (!ride) return; const r = remotes.get(ride.driver);
+  if (!r || ![4, 5, 8].includes(r.target.p)) { leaveRide(false); return; }
+  const p = r.ch.root.position, f = r.ch.root.rotation.y, back = SEAT_BACK[ride.kind] + (ride.seat || 0) * 0.8;
+  player.pos.x = p.x - Math.sin(f) * back; player.pos.z = p.z - Math.cos(f) * back; player.y = r.target.y || 0;
+  player.vy = 0; player.onGround = ride.kind !== 'plane'; player.standOn = null; player.peak = player.y; player.facing = f; player.target = null;
+}
+
 /* ---------- berenang di laut sekitar dermaga ---------- */
 const SWIM_DROP = 1.55; // badan tenggelam sampai dada
 const swimming = () => player.onGround && !player.standOn && player.y <= W.WATER_Y + 0.01 && !W.onIsland(player.pos.x, player.pos.z);
@@ -4309,6 +4491,13 @@ function poseSpecial(ch, p, phase, holder) {
   ch.body.rotation.z = p === 2 && holder === player ? -para.bank : 0; // badan miring saat berbelok
   if (p === 2) { ch.body.rotation.x = 0.7; ch.shL.rotation.x = -0.3; ch.shR.rotation.x = -0.3; ch.shL.rotation.z = 1.0; ch.shR.rotation.z = -1.0; ch.hipL.rotation.x = 0.25 + Math.sin(elapsed * 2) * 0.12; ch.hipR.rotation.x = 0.25 - Math.sin(elapsed * 2) * 0.12; }
   if (p === 3) { ch.shL.rotation.x = -Math.PI / 2 + Math.sin(phase) * 1.4; ch.shR.rotation.x = -Math.PI / 2 - Math.sin(phase) * 1.4; ch.hipL.rotation.x = Math.sin(phase * 2) * 0.3; ch.hipR.rotation.x = -Math.sin(phase * 2) * 0.3; }
+  if (p >= 4 && p <= 9) { ch.hipL.rotation.x = ch.hipR.rotation.x = -1.45; ch.shL.rotation.x = ch.shR.rotation.x = p === 6 || p === 7 || p === 9 ? -0.6 : -1.2; ch.body.position.y = 0; }
+  // kendaraan teman (pemain sendiri memakai veh.mesh; penumpang tidak membawa kendaraan)
+  if (holder !== player) {
+    const want = p === 4 || p === 5 || p === 8 ? p : 0;
+    if (holder.vkind !== want) { if (holder.vmesh) ch.root.remove(holder.vmesh); holder.vmesh = null; holder.vkind = want; if (want) { holder.vmesh = makeVehMesh(want); holder.vmesh.position.set(0, VEH_MESH_Y[want], VEH_MESH_Z[want]); ch.root.add(holder.vmesh); } }
+    if (want === 8 && holder.vmesh) holder.vmesh.userData.prop.rotation.z += 0.6;
+  }
   if (p === 2 && !holder.wings) holder.wings = makeWings(ch);
   if (holder.wings) {
     holder.wings.visible = p === 2;
@@ -4385,9 +4574,9 @@ function eatTick(dt) {
 let nearNpc = null;
 function checkNpcs() {
   let near = null;
-  if (playing && !activeZone && !paused() && !me.down) {
+  if (playing && !activeZone && !paused() && !me.down && !veh.kind && !ride) {
     let best = 3.6;
-    for (const n of W.npcs) { const d = Math.hypot(n.pos.x - player.pos.x, n.pos.z - player.pos.z); if (d < best && Math.abs(n.y - player.y) < 1.6) { best = d; near = n; } }
+    for (const n of W.npcs) { if (!n.ch.root.visible) continue; const d = Math.hypot(n.pos.x - player.pos.x, n.pos.z - player.pos.z); if (d < best && Math.abs(n.y - player.y) < 1.6) { best = d; near = n; } }
   }
   if (near === nearNpc) return;
   nearNpc = near; const b = $('#talkBtn'); b.hidden = !near;
@@ -4472,7 +4661,9 @@ function update(dt) {
     if (keys.has('a') || keys.has('arrowleft')) sx -= 1; if (keys.has('d') || keys.has('arrowright')) sx += 1;
     if (keys.has('q')) view.yaw += dt * 2; if (keys.has('e')) view.yaw -= dt * 2;
     let dx = 0, dz = 0, power = 1;
-    if (para.phase === 2) {
+    if (ride) { moving = false; } // penumpang: ikut pengemudi
+    else if (veh.kind) { vehicleTick(dt, sx, sy); moving = Math.abs(veh.v) > 0.4; }
+    else if (para.phase === 2) {
       // terbang dengan sayap: selalu melaju ke depan; kiri/kanan = berbelok, depan = lebih cepat, belakang = melayang pelan
       player.target = null; marker.visible = false;
       const turn = clamp(sx, -1, 1), fwd = clamp(-sy, -1, 1);
@@ -4521,15 +4712,18 @@ function update(dt) {
   if (player.jumpHeld && playing && !modal) player.jumpBuf = Math.max(player.jumpBuf, 0.05);
   tryJump(); player.jumpBuf = Math.max(0, player.jumpBuf - dt);
   if (para.phase === 2 && !player.onGround) player.vy += W.GRAV * dt; // sayap menahan gravitasi sebelum posisi dihitung
-  const landed = W.stepVertical(player, dt);
-  if (landed) onLand(landed);
+  rideTick();
+  if (veh.kind === 'jetski') { player.y = -0.35; player.vy = 0; player.onGround = true; player.standOn = null; player.peak = player.y; }
+  else if (veh.kind === 'plane') { player.vy = 0; player.onGround = veh.fl.phase === 'ready'; player.standOn = null; player.peak = player.y; }
+  else if (!ride) { const landed = W.stepVertical(player, dt); if (landed) onLand(landed); }
+  vehicleClock();
   paraTick(dt); swimTick(dt); eatTick(dt);
-  if (player.y < -0.6) fellInSea();
+  if (player.y < -0.6 && !veh.kind && !ride) fellInSea();
   if (playing) { worldPlay(dt); W.updateHide(player.pos.x, player.y, player.pos.z); }
   W.updateNpcs(dt, player); checkNpcs();
   lookTick(dt);
   // animasi
-  ch.root.position.set(player.pos.x, swimming() ? player.y - SWIM_DROP : player.y, player.pos.z);
+  ch.root.position.set(player.pos.x, vehCode() ? player.y + VEH_OFF[vehCode()] : swimming() ? player.y - SWIM_DROP : player.y, player.pos.z);
   let rd = player.facing - ch.root.rotation.y; rd = Math.atan2(Math.sin(rd), Math.cos(rd));
   ch.root.rotation.y += rd * Math.min(1, dt * 12);
   if (moving) player.phase += dt * 11; else player.phase *= Math.pow(0.001, dt);
@@ -4538,7 +4732,7 @@ function update(dt) {
   ch.hipL.rotation.x = sw; ch.hipR.rotation.x = -sw;
   ch.shL.rotation.x = air || -sw; ch.shR.rotation.x = air || sw;
   ch.body.position.y = moving ? Math.abs(Math.sin(player.phase)) * 0.08 : Math.sin(elapsed * 2) * 0.02;
-  poseSpecial(ch, para.phase || (swimming() ? 3 : 0), player.phase, player);
+  poseSpecial(ch, para.phase || vehCode() || (swimming() ? 3 : 0), player.phase, player);
   if (eatSt.on) { ch.shR.rotation.x = -2.0 + Math.sin(elapsed * 9) * 0.35; ch.shL.rotation.x = -0.4; }
   if (moving && !activeZone && !bubbleStay && !$('#bubble').hidden && performance.now() - bubbleAt > 3000) $('#bubble').hidden = true; // dialog tidak menghalangi saat berjalan
   if (marker.visible) { marker.material.opacity = 0.5 + Math.sin(elapsed * 8) * 0.3; }
@@ -4594,9 +4788,10 @@ function update(dt) {
       rate = 30;
     } else {
       // orang ketiga: kamera di belakang & sedikit di atas, seluruh tubuh karakter terlihat
-      let dist = view.dist * (aspect < 1 ? 1.3 : 1);
+      const flying = veh.kind === 'plane' || ride?.kind === 'plane';
+      let dist = view.dist * (aspect < 1 ? 1.3 : 1) * (flying ? 1.7 : 1);
       // kamera ikut naik setinggi pemain (menara, gedung, gunung); dihaluskan supaya tidak ikut terguncang saat melompat
-      const cy0 = view.camY ?? player.y, gy = player.onGround || player.y - cy0 > 3 ? player.y : Math.min(player.y, cy0); // lompatan kecil tidak menggoyang kamera
+      const cy0 = view.camY ?? player.y, gy = flying || player.onGround || player.y - cy0 > 3 ? player.y : Math.min(player.y, cy0); // lompatan kecil tidak menggoyang kamera
       view.camY = view.camY == null || Math.abs(gy - view.camY) > 12 ? gy : view.camY + (gy - view.camY) * Math.min(1, dt * 5);
       look = new THREE.Vector3(player.pos.x, 1.7 + view.camY + (player.y - view.camY) * 0.35, player.pos.z);
       // jarak kamera tetap (tidak ada zoom otomatis); berubah hanya saat pemain mengganti mode/zoom sendiri
@@ -4674,6 +4869,6 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.__pbSend = send;
 window.__pbSpeak = () => { const z = speakZone; const it = z?.items?.[z.idx]; return it ? { read: it.read, value: it.value, show: it.show, type: it.type, idx: z.idx, mode: srMode } : null; };
 window.__pbZ = () => zombies; window.__pbSpawn = () => spawnZombie(); window.__pbW = () => ({ phase: worldSt.phase, host: amZHost(), safe: worldSt.safe, rest: worldSt.rest, down: me.down, spec: spec.on, specName: $('#specName').textContent, chip: $('#phaseChip').textContent }); window.__pbHurt = () => { me.inv = 0; return hurtMe({ x: window.__pb.player.pos.x + 1, z: window.__pb.player.pos.z }); };
-window.__pbWorld = W; window.__pbClimb = climb; window.__pbEat = eatSt; window.__pbPara = para; window.__pbTalk = (i) => talkTo(W.npcs[i]);
+window.__pbWorld = W; window.__pbClimb = climb; window.__pbEat = eatSt; window.__pbPara = para; window.__pbVeh = veh; window.__pbTalk = (i) => talkTo(W.npcs[i]);
 window.__pb = { zones, player, save: () => save, walkTo, onTap, camera, view, stick, teleport, openMap: () => openMap(), speak, voices: () => idVoices, net, remotes, doLogin, doEmote, setCamMode, celebrate };
 boot();

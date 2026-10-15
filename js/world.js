@@ -212,7 +212,17 @@ function frame(x, z, yaw = 0) {
 }
 // bangunan yang atap/lantai atasnya disembunyikan saat pemain di dalam (supaya kamera bisa melihat)
 const hideables = [];
-function hideable(f, hx, hz, levels, top) { hideables.push({ cx: f.cx, cz: f.cz, a: f.a, ca: f.ca, sa: f.sa, hx, hz, levels, top, inn: false, py: 0 }); for (const lv of levels) batchGroup(lv); }
+function hideable(f, hx, hz, levels, top, building = true) { hideables.push({ cx: f.cx, cz: f.cz, a: f.a, ca: f.ca, sa: f.sa, hx, hz, levels, top, inn: false, py: 0, building }); for (const lv of levels) batchGroup(lv); }
+// apakah titik ini di dalam bangunan (sekolah, kantin, gedung, rumah, tempat sewa)
+export function inBuilding(x, z) { for (const h of hideables) { if (!h.building) continue; const [lx, lz] = local(h, x, z); if (Math.abs(lx) < h.hx + 0.3 && Math.abs(lz) < h.hz + 0.3) return true; } return false; }
+// malam: warga pulang (tidak terlihat), kantin & penyewaan laut/udara tutup
+let isNight = false; const closedSigns = [];
+export function setNight(on) {
+  if (on === isNight) return; isNight = on;
+  for (const s of closedSigns) s.visible = on;
+}
+export const onShip = (b) => !!b.standOn && b.standOn.moving && !b.standOn.lift && ship.deck && b.standOn !== LIFT.floor && Math.hypot(b.pos.x - ship.deck.cx, b.pos.z - ship.deck.cz) < 6;
+function closedSign(x, y, z) { const sp = sign('🌙 TUTUP · buka lagi pagi', 4.4, { bg: '#1d2b53', fg: '#ffd23a' }); sp.position.set(x, y, z); sp.visible = false; DYN.add(sp); closedSigns.push(sp); }
 export function updateHide(px, py, pz) {
   for (const h of hideables) {
     const [lx, lz] = local(h, px, pz);
@@ -240,6 +250,9 @@ export const PLACES = {
   rumah: { name: 'Rumah Nenek', emoji: '🏡', pos: polar(330, 49.5), r: 12 },
   gunung: { name: 'Gunung', emoji: '⛰️', x: 38, z: -68, r: 16 },
   trampolin: { name: 'Trampolin Raksasa', emoji: '🤸', pos: polar(270, 49.5), r: 12 },
+  jetski: { name: 'Sewa Jetski', emoji: '🚤', pos: polar(-15, 94), r: 4.5 },
+  atv: { name: 'Sewa ATV', emoji: '🛵', pos: polar(100, 67), r: 5 },
+  bandara: { name: 'Bandara', emoji: '✈️', pos: polar(-45, 94), r: 6 },
   kapal: { name: 'Kapal', emoji: '⛵', x: -86, z: 30, r: 5 },
 };
 for (const p of Object.values(PLACES)) if (p.pos) { p.x = p.pos[0]; p.z = p.pos[1]; }
@@ -659,6 +672,7 @@ function buildCanteen() {
   for (let i = 0; i < 13; i++) f.deco(-HX - 0.5 + i + 0.5, 0, 1, HZ * 2 + 1.4, 3.7, 0.25, i % 2 ? '#e8434b' : '#ffffff', roof);
   hideable(f, HX, HZ, [roof], 3.4);
   const sp = sign('🍜 KANTIN', 3, { bg: '#ffb347' }); f.put(sp, 0, 5.6, HZ + 0.5, DYN_AT(f));
+  { const [x, z] = f.W(0, HZ + 1); closedSign(x, 2.6, z); }
   addNpc({ id: 'kantin', name: 'Bu Sari', role: 'Penjual', x: f.W(1.4, -3.85), face: f.a, y: 0.15, shirt: '#ff8fc0', pants: '#5b3b22', girl: true, hat: null, pitch: 0.12, talk: talkCanteen });
   addNpc({ id: 'makan', name: 'Dodi', role: 'Teman', x: f.W(3.5, 2.4), face: f.a + Math.PI, y: 0.55, shirt: '#3fb25a', pants: '#2c2f3a', scale: 0.8, pitch: 0.35, sit: true, lines: ['Nyam nyam! Bakso Bu Sari enak sekali!', 'Sebelum makan, kita berdoa dulu, ya.', 'Habis main, aku lapar. Kamu mau makan juga?'] });
 }
@@ -902,7 +916,7 @@ export function updateNpcs(dt, P) {
   const t = performance.now() / 1000;
   for (const n of npcs) {
     const dx = P.pos.x - n.pos.x, dz = P.pos.z - n.pos.z, d = Math.hypot(dx, dz);
-    const vis = d < 60 && Math.abs(n.y - P.y) < 14; n.ch.root.visible = vis; if (!vis) continue;
+    const vis = !isNight && d < 60 && Math.abs(n.y - P.y) < 14; n.ch.root.visible = vis; if (!vis) continue;
     let moving = false;
     const toPlayer = Math.atan2(dx, dz);
     let want = null;
@@ -1014,6 +1028,118 @@ function buildTownNpcs() {
 /* =========================================================
    MULAI
    ========================================================= */
+/* =========================================================
+   KENDARAAN SEWAAN: ATV (darat) & jetski (laut), dibayar dengan koin
+   ========================================================= */
+export const RENT = {
+  atv: { name: 'ATV', emoji: '🛵', price: 10, min: 3 },
+  jetski: { name: 'Jetski', emoji: '🚤', price: 15, min: 3 },
+  plane: { name: 'Pesawat', emoji: '✈️', price: 20, min: 2 },
+};
+export function makePlane(col = '#e8434b') {
+  const g = new THREE.Group();
+  K.box(1.4, 1.3, 6, '#ffffff', 0, 0.95, 0, g); K.box(1.42, 0.25, 6.02, col, 0, 0.75, 0, g);
+  K.box(1.0, 1.0, 0.8, '#ffffff', 0, 0.95, 3.4, g); K.box(1.1, 0.6, 1.3, '#bfe6ff', 0, 1.75, 1.2, g, false);
+  K.box(8.4, 0.16, 1.6, col, 0, 1.0, 0.4, g); K.box(0.3, 0.2, 1.6, '#ffffff', -4.0, 1.05, 0.4, g, false); K.box(0.3, 0.2, 1.6, '#ffffff', 4.0, 1.05, 0.4, g, false);
+  K.box(0.14, 1.5, 1.1, col, 0, 2.1, -2.6, g); K.box(3.2, 0.14, 0.9, col, 0, 1.25, -2.7, g);
+  for (let i = 0; i < 3; i++) for (const sx of [-0.71, 0.71]) K.box(0.04, 0.32, 0.4, '#3a7cf5', sx, 1.25, 0.2 - i * 0.8, g, false);
+  for (const [x, z] of [[-1.1, 0.6], [1.1, 0.6], [0, 2.8]]) { K.box(0.12, 0.5, 0.12, '#2c2f3a', x, 0.3, z, g, false); K.box(0.2, 0.3, 0.3, '#1d1d1d', x, 0.15, z, g, false); }
+  const prop = new THREE.Group(); prop.position.set(0, 0.95, 3.85); g.add(prop);
+  K.box(0.25, 0.25, 0.2, '#ffd23a', 0, 0, 0, prop, false); K.box(0.16, 2.0, 0.06, '#2c2f3a', 0, 0, 0.05, prop, false);
+  g.userData.prop = prop;
+  return g;
+}
+// model kendaraan (dipakai untuk pemain sendiri, teman, dan pajangan di tempat sewa)
+export function makeATV(col = '#e8434b') {
+  const g = new THREE.Group();
+  K.box(1.3, 0.45, 1.9, col, 0, 0.75, 0, g); K.box(0.9, 0.25, 0.9, '#2c2f3a', 0, 1.05, -0.15, g);
+  K.box(1.5, 0.12, 0.6, col, 0, 0.95, 0.75, g); K.box(1.5, 0.12, 0.6, col, 0, 0.95, -0.8, g);
+  K.box(0.9, 0.08, 0.08, '#2c2f3a', 0, 1.35, 0.55, g); K.box(0.08, 0.35, 0.08, '#2c2f3a', 0, 1.15, 0.55, g);
+  for (const sx of [-0.75, 0.75]) for (const sz of [-0.65, 0.65]) K.box(0.35, 0.6, 0.6, '#1d1d1d', sx, 0.3, sz, g);
+  K.box(0.2, 0.14, 0.06, '#fff3a0', -0.35, 0.8, 0.96, g, false); K.box(0.2, 0.14, 0.06, '#fff3a0', 0.35, 0.8, 0.96, g, false);
+  return g;
+}
+export function makeJetski(col = '#3a7cf5') {
+  const g = new THREE.Group();
+  K.box(1.0, 0.4, 2.4, '#ffffff', 0, 0.2, 0, g); K.box(0.8, 0.3, 0.7, col, 0, 0.2, 1.4, g); K.box(1.04, 0.12, 2.44, col, 0, 0.05, 0, g);
+  K.box(0.5, 0.25, 1.0, '#2c2f3a', 0, 0.5, -0.2, g); K.box(0.7, 0.08, 0.08, '#2c2f3a', 0, 0.85, 0.55, g); K.box(0.08, 0.4, 0.08, '#2c2f3a', 0, 0.6, 0.55, g);
+  return g;
+}
+function buildRentals() {
+  // tempat sewa ATV: atap + ATV terparkir + penjaga
+  { const p = PLACES.atv, f = frame(p.x, p.z, faceCenter(p.x, p.z));
+    f.solid(0, 0, 8, 6, -0.5, 0.62, '#9aa7b4');
+    for (const [x, z] of [[-3.7, -2.7], [3.7, -2.7], [-3.7, 2.7], [3.7, 2.7]]) f.solid(x, z, 0.3, 0.3, 0.12, 3.2, '#4a4f5c');
+    const roof = f.level(3.3); for (let i = 0; i < 8; i++) f.deco(-3.5 + i, 0, 1, 6.4, 3.3, 0.2, i % 2 ? '#ffd23a' : '#2c2f3a', roof);
+    hideable(f, 6, 9, [roof], 3.3, false); // atap hilang juga saat ATV baru keluar (kamera masih di bawah atap)
+    for (const [x, c] of [[-2.2, '#e8434b'], [0, '#3fb25a'], [2.2, '#3a7cf5']]) { const a = makeATV(c); a.position.set(x, 0.12, -1.2); f.g.add(a); }
+    const sp = sign(`🛵 Sewa ATV · 🪙 ${RENT.atv.price} · ${RENT.atv.min} menit`, 5.5, { bg: '#ffd23a' }); f.put(sp, 0, 4.4, 3, DYN_AT(f));
+    RENT.atv.x = f.W(0, 2.2)[0]; RENT.atv.z = f.W(0, 2.2)[1]; RENT.atv.yaw = f.a; RENT.atv.y = 0.12;
+    addNpc({ id: 'sewaatv', name: 'Bang Toni', role: 'Penyewaan ATV', x: f.W(-3, 1.8), y: 0.12, face: f.a, shirt: '#2c2f3a', pants: '#3b4a6b', hat: 'tinggi', pitch: -0.3,
+      lines: [`Mau keliling pulau naik ATV? Sewanya ${RENT.atv.price} koin untuk ${RENT.atv.min} menit. Berdiri di depan sini, lalu ketuk tombol sewa!`, 'Pelan-pelan, ya, kalau ada teman di jalan.', 'ATV bisa naik gunung juga, lho!'] }); }
+  // tempat sewa jetski di pantai timur
+  { const p = PLACES.jetski, f = frame(p.x, p.z, faceCenter(p.x, p.z));
+    f.solid(0, 0, 5, 3, -0.5, 0.62, '#c98f4f');
+    f.deco(0, -1.2, 4.6, 0.2, 0.12, 1.1, '#ffffff'); f.deco(0, -1.2, 4.8, 0.08, 1.2, 0.2, '#3a7cf5');
+    for (const x of [-2.3, 2.3]) f.deco(x, -1.2, 0.15, 0.15, 0.12, 3, '#8a5a35');
+    const roof = f.level(3.1); f.deco(0, -1.2, 5.6, 2.6, 3.1, 0.15, '#3a7cf5', roof); hideable(f, 4, 6, [roof], 3.1, false);
+    for (const [x, c] of [[-3, '#3a7cf5'], [3, '#ff8a2a']]) { const j = makeJetski(c); j.position.set(x, -0.85, -7.5); j.rotation.y = 0.3 * Math.sign(x); f.g.add(j); }
+    const sp = sign(`🚤 Sewa Jetski · 🪙 ${RENT.jetski.price} · ${RENT.jetski.min} menit`, 5.5, { bg: '#d8f0ff' }); f.put(sp, 0, 4.3, 0, DYN_AT(f));
+    { const [x, z] = f.W(0, 2.4); closedSign(x, 2.4, z); }
+    RENT.jetski.x = f.W(0, 1.6)[0]; RENT.jetski.z = f.W(0, 1.6)[1]; RENT.jetski.yaw = f.a; RENT.jetski.y = 0.12;
+    const [wx, wz] = f.W(0, -9); RENT.jetski.water = [wx, wz]; RENT.jetski.back = f.W(0, 2.6);
+    addNpc({ id: 'sewajetski', name: 'Kak Bayu', role: 'Penyewaan Jetski', x: f.W(1.6, -0.6), y: 0.12, face: f.a, shirt: '#ffd23a', pants: '#3a7cf5', hat: 'nelayan', pitch: -0.2,
+      lines: [`Jetski bisa keliling pulau lewat laut! Sewanya ${RENT.jetski.price} koin untuk ${RENT.jetski.min} menit.`, 'Jetski tidak boleh masuk area berenang, ya. Banyak teman yang berenang di sana.', 'Pegangan yang erat, ya!'] }); }
+}
+// bandara apung di laut tenggara: jembatan tinggi dari pantai (jetski bisa lewat di bawahnya), landasan, terminal
+function buildAirport() {
+  const c = polar(-45, 132), f = frame(c[0], c[1], faceCenter(c[0], c[1])), TOP = 1.9;
+  f.solid(0, 0, 72, 14, 1.6, 0.3, '#9aa7b4');
+  for (let x = -33; x <= 33; x += 6) for (const z of [-6, 6]) f.deco(x, z, 0.6, 0.6, -1.2, 2.8, '#6b7380');
+  f.deco(0, -2, 66, 6, TOP, 0.03, '#3d4250', f.g, false);
+  for (let x = -30; x <= 30; x += 5) f.deco(x, -2, 2.4, 0.3, TOP + 0.03, 0.02, '#ffffff', f.g, false);
+  for (const x of [-32, 32]) for (let k = -2; k <= 2; k++) f.deco(x, -2 + k * 1.1, 1.2, 0.5, TOP + 0.03, 0.02, '#ffd23a', f.g, false);
+  // pagar keliling (celah ke jembatan)
+  const R = (x, z, w, d) => { f.deco(x, z, w, d, TOP, 0.9, '#ffffff', f.g, false); f.solid(x, z, w, d, TOP, 2.2, null); };
+  R(0, -7, 72, 0.2); R(-19, 7, 34, 0.2); R(19, 7, 34, 0.2); R(-36, 0, 0.2, 14); R(36, 0, 0.2, 14);
+  // jembatan ke pantai + tangga
+  f.solid(0, 22, 3, 30, 1.6, 0.3, '#c98f4f');
+  for (let z = 9; z <= 36; z += 4.5) f.deco(0, z, 0.4, 0.4, -1.2, 2.8, '#7a5432');
+  for (const x of [-1.5, 1.5]) { f.deco(x, 22, 0.12, 30, TOP + 0.8, 0.1, '#ffffff', f.g, false); f.solid(x, 22, 0.15, 30, TOP, 2.2, null); }
+  for (let i = 0; i < 4; i++) f.solid(0, 37.5 + i, 3, 1, 0, TOP - 0.45 * (i + 1), i % 2 ? '#c98f4f' : '#b07a42');
+  // terminal, menara kontrol, loket
+  f.solid(-12, 3.5, 9, 4, TOP, 3.2, '#f4ecd8'); f.deco(-12, 3.5, 9.4, 4.4, TOP + 3.2, 0.3, '#3a7cf5');
+  for (const x of [-15, -12, -9]) f.winX(x, 1.5, 1.6, TOP + 1, 1.4);
+  f.solid(13, 4, 3, 3, TOP, 7, '#e9e4d8'); f.deco(13, 4, 3.6, 3.6, TOP + 7, 2, '#bfe6ff', f.g, false); f.deco(13, 4, 3.8, 3.8, TOP + 9, 0.3, '#2c2f3a');
+  f.solid(-3, 5.4, 3, 1, TOP, 1.1, '#e8434b'); f.deco(-3, 5.4, 3.2, 1.2, TOP + 1.1, 0.08, '#ffffff', f.g, false);
+  const sp = sign(`✈️ Sewa Pesawat · 🪙 ${RENT.plane.price} · ${RENT.plane.min} menit`, 5.6, { bg: '#d8f0ff' }); f.put(sp, -3, TOP + 3.4, 5.4, DYN_AT(f));
+  const sp2 = sign('✈️ BANDARA PULAU', 6, { bg: '#ffffff' }); f.put(sp2, 0, TOP + 5.5, 7, DYN_AT(f));
+  { const [x, z] = f.W(0, 41); closedSign(x, 2.6, z); }
+  // pesawat pajangan di ujung landasan
+  const shown = makePlane('#3a7cf5'); shown.position.set(-26, TOP, -2); shown.rotation.y = Math.PI / 2; f.g.add(shown);
+  Object.assign(RENT.plane, { x: f.W(-3, 4.2)[0], z: f.W(-3, 4.2)[1], y: TOP, start: f.W(-24, -2), back: f.W(-3, 3.2), yaw: f.a + Math.PI / 2, top: TOP });
+  PLACES.bandara.go = f.W(0, 42); PLACES.bandara.look = f.W(0, 0);
+  addNpc({ id: 'pilot', name: 'Kapten Andre', role: 'Pilot', x: f.W(-3, 6.4), y: TOP, face: f.a + Math.PI, shirt: '#ffffff', pants: '#1d2b53', hat: 'baret', pitch: -0.25,
+    lines: [`Mau terbang keliling pulau? Sewa pesawat ${RENT.plane.price} koin untuk ${RENT.plane.min} menit. Berdiri di depan loket ini, ya!`, 'Joystick ke kiri dan kanan untuk belok, ke atas untuk naik, ke bawah untuk turun.', 'Ajak teman ikut terbang! Pesawat ini muat empat orang: satu pilot dan tiga penumpang.'] });
+}
+// garis pelampung penanda area berenang (hanya di bagian laut)
+function buildSwimArea() {
+  const root = new THREE.Group(); K.scene.add(root); const pts = [];
+  for (let i = 0; i < 64; i++) { const a = (i / 64) * TAU, x = SWIM.x + Math.cos(a) * SWIM.r, z = SWIM.z + Math.sin(a) * SWIM.r; pts.push([x, z, !onIsland(x, z) && Math.hypot(x, z) > K.edgeR(x, z) + 0.5]); }
+  pts.forEach(([x, z, ok], i) => {
+    if (!ok) return; K.box(0.55, 0.45, 0.55, i % 2 ? '#ffffff' : '#e8434b', x, -0.72, z, root, false);
+    const [nx, nz, nok] = pts[(i + 1) % pts.length]; if (!nok) return;
+    const l = Math.hypot(nx - x, nz - z), m = K.box(l, 0.08, 0.08, '#ffd23a', (x + nx) / 2, -0.78, (z + nz) / 2, root, false); m.rotation.y = -Math.atan2(nz - z, nx - x);
+  });
+  // papan & kursi penjaga pantai
+  const a = Math.atan2(SWIM.z, SWIM.x) - 0.32, bx = Math.cos(a) * 93, bz = Math.sin(a) * 93;
+  K.box(1.2, 0.2, 1.2, '#ffffff', bx, 2.2, bz, root); for (const [ox, oz] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) K.box(0.12, 2.2, 0.12, '#ffffff', bx + ox, 1.1, bz + oz, root);
+  K.box(1.2, 0.9, 0.12, '#e8434b', bx, 2.7, bz - 0.55, root); addSolid(bx, bz, 0.65, 0.65, 0, 2.3);
+  const sp = sign('🏊 Area Berenang', 4, { bg: '#d8f0ff' }); sp.position.set(bx, 4.4, bz); DYN.add(sp);
+  addNpc({ id: 'pantai', name: 'Kak Rani', role: 'Penjaga Pantai', x: [bx + Math.cos(a + 1.6) * 1.6, bz + Math.sin(a + 1.6) * 1.6], face: Math.atan2(SWIM.x - bx, SWIM.z - bz), girl: true, shirt: '#e8434b', pants: '#ffd23a', pitch: 0.1,
+    lines: ['Berenang di dalam garis pelampung merah-putih, ya. Di luar garis itu laut dalam!', 'Kalau capek berenang, istirahat di pantai dulu.', 'Kak Rani menjaga kalian. Ayo berenang dengan aman!'] });
+}
+
 function buildTrampolines() {
   const p = PLACES.trampolin; const root = new THREE.Group(); K.scene.add(root);
   for (const [k, sx] of [[0, -7.5], [1, 7.5]]) {
@@ -1034,7 +1160,7 @@ function buildTrampolines() {
 
 export function initWorld(ctx) {
   K = ctx; K.scene.add(DYN);
-  buildTower(); buildSchool(); buildCanteen(); buildOffice(); buildHouses(); buildMountain(); buildPierAndShip(); buildTrampolines(); buildTownNpcs();
+  buildTower(); buildSchool(); buildCanteen(); buildOffice(); buildHouses(); buildMountain(); buildPierAndShip(); buildTrampolines(); buildRentals(); buildAirport(); buildSwimArea(); buildTownNpcs();
   TD.traverse((m) => { if (m.isMesh) m.castShadow = false; });
   updateMovers(0, { pos: { x: 0, z: 0 }, y: 0, onGround: false }, 0);
 }

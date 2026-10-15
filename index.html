@@ -163,15 +163,13 @@ button:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
 /* HP/tablet: joystick pandangan di pojok kanan bawah; tombol emotikon & lompat berjejer di atasnya */
 @media (hover:none) and (pointer:coarse){
   .foot .rightCol{display:grid;grid-template-columns:auto auto;gap:10px;justify-items:end;align-items:end;padding-bottom:148px}
-  .foot .rightCol > :not(#emoteBtn):not(#jumpBtn){grid-column:1 / -1}
-  #emotes{bottom:calc(240px + env(safe-area-inset-bottom,0px))}
+  .foot .rightCol > :not(#jumpBtn){grid-column:1 / -1}
 }
 @media (max-width:560px){#look{width:118px;height:118px}}
 @media (max-height:520px){
   #look{width:108px;height:108px;bottom:calc(8px + env(safe-area-inset-bottom,0px))}#lookKnob{width:48px;height:48px;margin:-24px 0 0 -24px;font-size:22px}
-  #emoteBtn{width:56px;height:56px;font-size:30px}
 }
-@media (hover:none) and (pointer:coarse) and (max-height:520px){.foot .rightCol{padding-bottom:116px}#emotes{bottom:calc(190px + env(safe-area-inset-bottom,0px))}}
+@media (hover:none) and (pointer:coarse) and (max-height:520px){.foot .rightCol{padding-bottom:116px}}
 @media (hover:none) and (pointer:coarse) and (max-width:560px) and (min-height:521px){.foot .rightCol{padding-bottom:130px}}
 #joy::before{content:"";position:absolute;inset:26%;border-radius:50%;border:3px dashed rgba(255,255,255,.6)}
 #joyKnob{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;border-radius:50%;background:var(--sun);box-shadow:0 5px 0 var(--sun-deep),0 8px 14px rgba(29,43,83,.25);pointer-events:none}
@@ -207,21 +205,17 @@ button:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
 #netDot{display:inline-block;width:12px;height:12px;border-radius:50%;background:#b9c3d8;margin-right:6px;vertical-align:middle}
 #netDot[data-st="online"]{background:#3fd16a}#netDot[data-st="lost"],#netDot[data-st="offline"]{background:#ff9f1c}
 /* misi */
-#mission{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);height:46px;border-radius:999px;padding:0 16px;display:flex;align-items:center;gap:6px;font-size:17px;white-space:nowrap;max-width:calc(100vw - 420px)}
-#mission .e{font-size:22px}#mission .sep{width:2px;height:22px;background:#e3ecf5;margin:0 4px}#mission .nm{overflow:hidden;text-overflow:ellipsis}#mission .dots{color:var(--sun-deep);letter-spacing:2px}
-@media (max-width:1180px){#mission{top:auto;bottom:calc(100px + env(safe-area-inset-bottom,0px));max-width:calc(100vw - 32px)}}
-/* HP: chip poin/juara kecil di kiri atas (di bawah nyawa), tidak di tengah pandangan */
+/* misi = ikon 🏆 saja (ketuk untuk mendengar poin & misi), supaya layar lega */
+#mission{display:grid;place-items:center;padding:0}#mission .e{font-size:24px}
+/* HP: semua chip info berjajar kecil di kolom kiri (di bawah nyawa), bagian tengah layar tetap lega */
 @media (max-height:520px),(max-width:560px){
-  #mission{top:calc(112px + env(safe-area-inset-top,0px));bottom:auto;left:max(14px,env(safe-area-inset-left,0px));transform:none;height:30px;padding:0 10px;font-size:13px;gap:4px;max-width:48vw;opacity:.9}
-  #mission .e{font-size:16px}#mission .sep{height:16px}
   #bubble{opacity:.93}
   #bubbleText{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-  #eatBar{top:calc(150px + env(safe-area-inset-top,0px))}
 }
 /* tombol tambahan HUD */
 #camBtn svg,#micBtn svg{width:28px;height:28px}
 #micBtn.on{background:var(--leaf);box-shadow:0 6px 0 var(--leaf-deep)}#micBtn.on svg{stroke:#fff}
-#emoteBtn{width:64px;height:64px;border-radius:22px;font-size:34px;display:grid;place-items:center;padding:0}
+#emoteBtn{font-size:26px;display:grid;place-items:center;padding:0}
 .rightCol{display:flex;flex-direction:column;gap:10px;align-items:flex-end}
 #enterBtn{display:flex;align-items:center;gap:8px;padding:6px 14px 8px 10px;border-radius:22px;animation:enterIn .35s ease-out}
 #enterBtn[hidden]{display:none}
@@ -232,6 +226,8 @@ button:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
 #eatBar{position:absolute;top:calc(130px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.94);border-radius:20px;padding:6px 14px;box-shadow:0 6px 16px rgba(29,43,83,.2);pointer-events:none!important}
 #eatBar[hidden]{display:none}#eatE{font-size:34px}#eatLbl{font-weight:800;font-size:15px;color:var(--ink)}
 #eatBar .bar{width:160px;height:12px;border-radius:99px;background:#e3ecf5;overflow:hidden;margin-top:3px}#eatFill{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffd23a,#3fb25a);transition:width .2s}
+#vehChip{position:absolute;top:calc(100px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:rgba(232,67,75,.92);color:#fff;font-weight:800;font-size:16px;border-radius:999px;padding:4px 14px;white-space:nowrap;pointer-events:none!important}
+#vehChip[hidden]{display:none}
 #towerChip{position:absolute;top:calc(100px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:rgba(58,124,245,.9);color:#fff;font-weight:800;font-size:16px;border-radius:999px;padding:4px 14px;white-space:nowrap;pointer-events:none!important}
 .npcAsk{text-align:center}
 #npcOpts{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:8px}
@@ -242,7 +238,7 @@ button:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
 #enterBtn:disabled{background:#b9c3d8;box-shadow:0 6px 0 #8f9ab2}
 @keyframes enterIn{from{transform:scale(.6);opacity:0}}
 #lobby .lvl{margin-left:auto;font-size:14px;font-weight:800;color:var(--ink-soft);background:var(--paper-2);border-radius:999px;padding:3px 10px}
-#emotes{position:fixed;right:max(14px,env(safe-area-inset-right,0px));bottom:calc(170px + env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:repeat(5,52px);gap:8px;background:var(--paper);padding:10px;border-radius:24px;box-shadow:0 12px 30px rgba(29,43,83,.3);z-index:20}
+#emotes{position:fixed;left:max(14px,env(safe-area-inset-left,0px));top:calc(72px + env(safe-area-inset-top,0px));display:grid;grid-template-columns:repeat(5,52px);gap:8px;background:var(--paper);padding:10px;border-radius:24px;box-shadow:0 12px 30px rgba(29,43,83,.3);z-index:20}
 #emotes .em{border:0;background:var(--paper-2);border-radius:16px;font-size:32px;width:52px;height:52px;padding:0;transition:transform .1s}
 #emotes .em:active{transform:scale(1.25)}
 /* lobi, papan ronde, hasil */
@@ -378,16 +374,26 @@ button:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
   .card{padding:16px}.card h2{font-size:24px}.card p{font-size:17px}.together p.big{font-size:20px}
 }
 @media (prefers-reduced-motion:reduce){.chunky{transition:none}}
+/* HP: semua chip info berjajar kecil di kolom kiri (setelah aturan dasar supaya tidak tertimpa) */
+@media (max-height:520px),(max-width:560px){
+  #phaseChip,#towerChip,#vehChip,#eatBar,#toast,#offline{left:max(14px,env(safe-area-inset-left,0px));transform:none;font-size:13px;padding:3px 10px;max-width:46vw}
+  #phaseChip{top:calc(112px + env(safe-area-inset-top,0px));white-space:normal}
+  #towerChip,#vehChip{top:calc(144px + env(safe-area-inset-top,0px))}
+  #eatBar{top:calc(176px + env(safe-area-inset-top,0px));gap:6px}#eatE{font-size:22px}#eatLbl{font-size:12px}#eatBar .bar{width:110px}
+  #toast,#offline{top:calc(214px + env(safe-area-inset-top,0px));white-space:normal;border-radius:14px}
+}
 /* HP tegak: ikon kanan atas pindah ke baris kedua supaya tidak bertumpuk dengan ikon kiri */
 @media (max-width:560px) and (min-height:521px){
   .ico{width:44px;height:44px}.ico svg{width:24px;height:24px}#stars{height:44px;font-size:20px}#stars svg{width:26px;height:26px}
   .tl{gap:8px}.tr{top:calc(60px + env(safe-area-inset-top,0px));gap:8px}
   #vitals{top:calc(112px + env(safe-area-inset-top,0px))}
-  #mission{top:calc(146px + env(safe-area-inset-top,0px))}
-  .foot .mid #bubble{position:fixed;top:calc(180px + env(safe-area-inset-top,0px));left:14px;right:14px;width:auto;max-width:none}
-  #phaseChip,#toast,#offline{top:calc(274px + env(safe-area-inset-top,0px))}
-  #towerChip{top:calc(308px + env(safe-area-inset-top,0px))}
-  #eatBar{top:calc(342px + env(safe-area-inset-top,0px))}
+  #emotes{top:calc(112px + env(safe-area-inset-top,0px));grid-template-columns:repeat(5,46px)}#emotes .em{width:46px;height:46px;font-size:28px}
+  .foot .mid #bubble{position:fixed;top:calc(216px + env(safe-area-inset-top,0px));bottom:auto;left:14px;right:14px;width:auto;max-width:none}
+  #phaseChip{top:calc(146px + env(safe-area-inset-top,0px))}
+  #towerChip,#vehChip{top:calc(180px + env(safe-area-inset-top,0px))}
+  #toast,#offline,#eatBar{left:auto;right:max(14px,env(safe-area-inset-right,0px));max-width:44vw}
+  #toast,#offline{top:calc(112px + env(safe-area-inset-top,0px))}
+  #eatBar{top:calc(160px + env(safe-area-inset-top,0px))}
 }
 </style>
 </head>
@@ -412,11 +418,13 @@ button:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
     <button class="chunky ico" id="wardrobeBtn" aria-label="Ganti baju">
       <svg viewBox="0 0 24 24" fill="#3a7cf5" stroke="#1d2b53" stroke-width="2" stroke-linejoin="round"><path d="M8 3 3 6l2 5 2-1v11h10V10l2 1 2-5-5-3c-.5 2-2 3-4 3S8.5 5 8 3Z"/></svg>
     </button>
+    <button class="chunky ico" id="emoteBtn" aria-label="Emotikon">😀</button>
+    <button class="chunky ico" id="mission" aria-label="Misi petualangan"></button>
   </div>
-  <button class="chunky" id="mission" aria-label="Misi petualangan"></button>
   <div id="vitals"><span id="hearts">❤️❤️❤️🤍🤍</span><span class="coin">🪙 <b id="coinCount">0</b></span></div>
   <div id="phaseChip" hidden></div>
   <div id="towerChip" hidden></div>
+  <div id="vehChip" hidden></div>
   <div id="eatBar" hidden><span id="eatE"></span><div><div id="eatLbl"></div><div class="bar"><i id="eatFill"></i></div></div></div>
   <div id="spect" hidden>
     <div class="sh">👻 Nyawamu habis · kamu sedang menonton</div>
@@ -462,7 +470,6 @@ button:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
         <button class="chunky" id="punchBtn" aria-label="Pukul">👊</button>
         <button class="chunky" id="shootBtn" aria-label="Tembak">🔫<small>0</small></button>
       </div>
-      <button class="chunky" id="emoteBtn" aria-label="Emotikon">😀</button>
       <button class="chunky sun" id="jumpBtn" aria-label="Lompat">
         <svg viewBox="0 0 24 24" fill="none" stroke="#1d2b53" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V5"/><path d="M5 11l7-7 7 7"/></svg>
       </button>

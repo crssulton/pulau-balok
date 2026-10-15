@@ -500,12 +500,16 @@ async def on_message(c, m):
                 c.avatar, c.stars = av, st
                 await broadcast({'t': 'pinfo', 'id': c.id, 'avatar': av, 'stars': st}, skip=c)
     elif t == 'move':
-        c.pos = {k: m.get(k, 0) for k in ('x', 'z', 'y', 'f', 'm', 'p')}  # p: 1 terjun bebas, 2 parasut, 3 berenang
+        c.pos = {k: m.get(k, 0) for k in ('x', 'z', 'y', 'f', 'm', 'p', 'pc')}  # p: 1 terjun, 2 sayap, 3 berenang, 4-9 kendaraan; pc: ada penumpang
         await broadcast({'t': 'move', 'id': c.id, **c.pos}, skip=c)
     elif t == 'poke':  # pukulan main-main antarpemain (nyawa tidak berkurang): semua melihat efeknya
         to = m.get('to')
         if to in clients:
             await broadcast({'t': 'poke', 'from': c.id, 'to': to, 'dx': m.get('dx', 0), 'dz': m.get('dz', 0)}, skip=c)
+    elif t in ('ride', 'rideOk', 'rideNo', 'rideOff', 'rideEnd'):  # penumpang kendaraan (maks. 2 orang)
+        o = clients.get(m.get('to'))
+        if o:
+            await o.send({**m, 'from': c.id})
     elif t == 'summit':  # pemain sampai di puncak Menara Langit
         await broadcast({'t': 'summit', 'id': c.id, 'name': c.name}, skip=c)
     elif t == 'emote':
