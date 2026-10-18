@@ -55,7 +55,19 @@ export function groundAt(x, z, y, pad = 0.22) {
 export const WATER_Y = -0.5; // tinggi kaki saat berenang (badan tenggelam sampai dada)
 export const SWIM = { x: -86, z: 30, r: 26 }; // laut tempat berenang: sekitar dermaga
 export const inSwim = (x, z) => Math.hypot(x - SWIM.x, z - SWIM.z) < SWIM.r;
-export const onIsland = (x, z) => Math.hypot(x, z) < K.edgeR(x, z) - 0.6;
+// dua pulau: Pulau Balok (bulat, pusat 0,0) dan Pulau Kota (kotak, di utara)
+// Pulau Kota berbentuk superelips (kotak bersudut membulat): |x|^5 + |z|^5 = 118^5
+export const CITY = { x: 0, z: 330, half: 110, land: 118, n: 5 };
+export const cityR = (x, z) => Math.pow(Math.abs(x - CITY.x) ** CITY.n + Math.abs(z - CITY.z) ** CITY.n, 1 / CITY.n);
+export const inCity = (x, z, m = 0) => cityR(x, z) < CITY.land - m;
+export const islandOf = (x, z) => (z > 165 ? 'kota' : 'balok');
+export const onLand = (x, z, m = 0) => (islandOf(x, z) === 'kota' ? inCity(x, z, m) : Math.hypot(x, z) < K.edgeR(x, z) - m);
+// tarik titik kembali ke daratan pulau terdekat (batas pantai)
+export function clampLand(p, m = 2.2) {
+  if (islandOf(p.x, p.z) === 'kota') { const r = cityR(p.x, p.z), l = CITY.land - m; if (r > l) { p.x = CITY.x + (p.x - CITY.x) * l / r; p.z = CITY.z + (p.z - CITY.z) * l / r; } return; }
+  const d = Math.hypot(p.x, p.z), lim = K.edgeR(p.x, p.z) - m; if (d > lim) { p.x *= lim / d; p.z *= lim / d; }
+}
+export const onIsland = (x, z) => onLand(x, z, 0.6);
 const baseGround = (x, z) => (onIsland(x, z) ? 0 : inSwim(x, z) ? WATER_Y : -4);
 // apakah ada balok yang menopang (untuk dermaga & kapal di luar batas pulau)
 export function supported(x, z, y) { const g = groundAt(x, z, y); return g.s !== null && y - g.y < 2.5; }
@@ -253,6 +265,7 @@ export const PLACES = {
   jetski: { name: 'Sewa Jetski', emoji: '🚤', pos: polar(-15, 94), r: 4.5 },
   atv: { name: 'Sewa ATV', emoji: '🛵', pos: polar(100, 67), r: 5 },
   bandara: { name: 'Bandara', emoji: '✈️', pos: polar(-45, 94), r: 6 },
+  pelabuhan: { name: 'Pelabuhan Kapal', emoji: '⛴️', pos: polar(70, 93), r: 6 },
   kapal: { name: 'Kapal', emoji: '⛵', x: -86, z: 30, r: 5 },
 };
 for (const p of Object.values(PLACES)) if (p.pos) { p.x = p.pos[0]; p.z = p.pos[1]; }
@@ -280,7 +293,7 @@ export const hazards = [];
 export const tower = { gate: null, floors: [], down: null, level: 0 };
 let blinkStill = null; const floorDecor = [];
 // tema kuis tiap lantai (berulang); makin tinggi lantainya, angkanya makin besar
-const FLOOR_THEMES = [
+export const FLOOR_THEMES = [
   { name: 'Berhitung', e: '🔢', items: ['🍎', '🍌', '🍊'], quiz(api, L) { const [e, nm] = pick([['🍎', 'apel'], ['⭐', 'bintang'], ['🐥', 'anak ayam'], ['🎈', 'balon']]); const n = randi(2, Math.min(10, 3 + Math.floor(L / 2))), o = numChoices(n); api.ask(`Ada berapa ${nm}? ${e.repeat(n)}`, o.map(String), o.indexOf(n), `Betul! Ada ${n} ${nm}.`, `Hampir! Coba hitung lagi pelan-pelan. Ada ${n} ${nm}.`); } },
   { name: 'Huruf', e: '🔤', items: ['🅰️', '🅱️', '🔤'], quiz(api) { const [w, Lt, e] = pick(QUIZ_WORDS); const o = shuffle([Lt, ...shuffle(QUIZ_WORDS.map((q) => q[1]).filter((x) => x !== Lt)).slice(0, 2)]); api.ask(`${e} ${w}. Huruf depannya apa?`, o, o.indexOf(Lt), `Hebat! ${w} dimulai dengan huruf ${Lt}.`, `Belum tepat. ${w} dimulai dengan huruf ${Lt}.`); } },
   { name: 'Warna', e: '🎨', items: ['🖍️', '🎨', '🌈'], quiz(api) { const C = [['🍌', 'kuning'], ['🍓', 'merah'], ['🥦', 'hijau'], ['🍇', 'ungu'], ['🍊', 'oranye'], ['🐳', 'biru']]; const [e, c] = pick(C); const o = shuffle([c, ...shuffle(C.map((q) => q[1]).filter((x) => x !== c)).slice(0, 2)]); api.ask(`${e} Ini warnanya apa?`, o, o.indexOf(c), `Pintar! Warnanya ${c}.`, `Belum tepat. Warnanya ${c}.`); } },
@@ -916,7 +929,9 @@ export function updateNpcs(dt, P) {
   const t = performance.now() / 1000;
   for (const n of npcs) {
     const dx = P.pos.x - n.pos.x, dz = P.pos.z - n.pos.z, d = Math.hypot(dx, dz);
-    const vis = !isNight && d < 60 && Math.abs(n.y - P.y) < 14; n.ch.root.visible = vis; if (!vis) continue;
+    const upHidden = n.y - P.y > 2.6 && inBuilding(n.pos.x, n.pos.z) && inBuilding(P.pos.x, P.pos.z); // lantai atas gedung sedang disembunyikan
+    const vis = !isNight && d < 42 && Math.abs(n.y - P.y) < 14 && !upHidden; n.ch.root.visible = vis; if (!vis) continue; // hemat: warga jauh tidak digambar
+    n.tag.visible = d < 22;
     let moving = false;
     const toPlayer = Math.atan2(dx, dz);
     let want = null;
@@ -1157,6 +1172,21 @@ function buildTrampolines() {
   }
   const sp = sign('🤸 Trampolin Raksasa', 5, { bg: '#ffd23a' }); sp.position.set(p.x, 6, p.z); DYN.add(sp);
 }
+
+// apakah kotak (x, z, setengah lebar hx, hz) bertabrakan dengan balok yang sudah ada
+export function hitsSolid(x, z, hx, hz, pad = 0.6) {
+  const seen = new Set();
+  for (let i = Math.floor((x - hx - 2) / GRID); i <= Math.floor((x + hx + 2) / GRID); i++) for (let j = Math.floor((z - hz - 2) / GRID); j <= Math.floor((z + hz + 2) / GRID); j++) {
+    for (const s of grid.get(cellKey(i, j)) || EMPTY) {
+      if (seen.has(s)) continue; seen.add(s);
+      if (Math.abs(s.cx - x) < hx + s.br + pad && Math.abs(s.cz - z) < hz + s.br + pad) return true;
+    }
+  }
+  return false;
+}
+// alat membangun untuk modul lain (Pulau Kota)
+export const kit = { frame, addSolid, sign, board, batchGroup, hideable, addNpc, DYN, movers, local, world, closedSign, textTex, numChoices, shuffle, pick, randi, rand, clamp, ease };
+export const getK = () => K;
 
 export function initWorld(ctx) {
   K = ctx; K.scene.add(DYN);

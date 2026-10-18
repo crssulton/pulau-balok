@@ -185,8 +185,25 @@ MENARA LANGIT (🗼, sisi barat pulau)
   Naik lift tidak mendapat hadiah puncak (hadiah hanya untuk yang mendaki).
 
 KONTROL DI HP/TABLET
-- Ikon kiri atas: rumah, peta, toko, ganti baju, 😀 emotikon, dan 🏆 misi
-  (ketuk 🏆 untuk mendengar poin dan misi). Info kecil (zona aman, lantai
+- HP & tablet: berjalan pakai joystick kiri saja (mengetuk tanah tidak memindahkan
+  anak, supaya tidak salah sentuh). Mengetuk warga/benda tetap bisa. Di komputer,
+  klik tanah dengan mouse tetap membuat anak berjalan ke sana.
+- HP & tablet: bisa dimainkan TEGAK maupun MIRING, mengikuti cara HP dipegang
+  (tidak dipaksa). Saat "Ayo Main" diketuk, game masuk layar penuh bila browser
+  mengizinkan. Tombol ⛶ (di kanan atas) menyalakan/mematikan layar penuh.
+  iPhone tidak mengizinkan layar penuh untuk web.
+- Menu Orang Tua juga bisa dibuka dari layar "Siapa yang main?" (tombol
+  🔒 Menu orang tua, tetap dengan soal hitung). Saat dibuka di tengah permainan,
+  anak otomatis dijeda (aman dari zombie, tidak terlihat teman).
+- CHECKPOINT: posisi terakhir disimpan otomatis (tiap beberapa detik dan saat
+  keluar), termasuk lantai Menara Langit yang sudah dicapai. Saat main lagi,
+  anak langsung muncul di tempat terakhir (di pulau mana pun).
+- Ikon kiri atas: rumah, peta, toko, ganti baju, 😀 emotikon, dan ⏸️ jeda.
+  Di bawahnya satu baris status: [❤️ nyawa · ⭐ bintang · 🪙 koin] lalu
+  tombol kecil 🏆 misi (ketuk untuk mendengar poin) dan 🎤 mikrofon.
+  Kanan atas: layar penuh, kamera, 🔒 menu orang tua. Kanan bawah: tombol
+  🔫 tembak, 👊 pukul, ⬆️ lompat sejajar dan sama besar; tombol "Masuk"/
+  "Ngobrol" muncul di atasnya. Info kecil (zona aman, lantai
   menara, waktu sewa, makan) tampil di kolom kiri, bukan di tengah layar.
 - Kiri: joystick untuk berjalan (sentuh di mana saja di setengah kiri).
 - Kanan: joystick 👁️ di pojok kanan bawah untuk memutar pandangan (bisa
@@ -240,6 +257,146 @@ TEMPAT JALAN-JALAN (tanpa soal; untuk menjelajah)
 - Atap bangunan otomatis tersembunyi saat pemain masuk, supaya isinya
   terlihat. Kasur, meja, dan bangku bisa dinaiki dengan melompat.
 
+PULAU KOTA 🏙️ (pulau kedua, di utara)
+- Tempat menghabiskan KOIN hasil belajar di Pulau Balok. Pelajaran tetap
+  ada di Pulau Balok; koin didapat dengan menukar bintang di Toko 🛒.
+- Ke sana naik KAPAL FERRY ⛴️: dermaga di pantai utara Pulau Balok (ada di
+  peta: "Pelabuhan Kapal"). Tunggu kapal merapat, ketuk "Naik kapal",
+  🪙 5 sekali jalan. Kapal bolak-balik terus; turun otomatis di seberang.
+  Pulang juga naik kapal dari ujung dermaga Pulau Kota.
+- BUS KOTA 🚌: dua bus berkeliling otomatis dan berhenti di 8 halte.
+  Tunggu di halte, ketuk "Naik bus" (🪙 2). Di halte berikutnya muncul
+  tombol "Turun di Halte …".
+- Kegiatan (bayar koin, ketuk tombol di depan loket):
+    🛍️ Toko Topi     6 topi baru (🪙 15–40), langsung dipakai & tersimpan
+                     (di lantai bawah Mall Kota)
+    🍔 Restoran      🪙 5, makan → nyawa +1 (lalu kenyang 2 menit)
+    🏥 Rumah Sakit   bisa dimasuki. Berobat sungguhan: anak berbaring di ranjang,
+                     dokter mengukur suhu, mendengar jantung, memeriksa
+                     tenggorokan, memberi obat, lalu istirahat.
+                     Periksa 🪙 5 (❤️ +1) atau Rawat sampai sehat 🪙 12 (❤️ penuh).
+                     Kalau nyawa penuh: cek kesehatan gratis.
+    🎭 Teater Kota   🪙 3, pilih 1 dari 4 cerita, lalu warga memainkan drama
+                     otomatis dengan narator & pesan moral: kisah nabi (Nuh,
+                     Yunus, Sulaiman), pahlawan (Kartini, Ki Hajar Dewantara,
+                     Hari Kemerdekaan), dongeng (Kancil, Kura-kura). Nabi
+                     TIDAK diperankan aktor; hanya diceritakan narator dan
+                     ditandai cahaya.
+    🎢 Roller Coaster 🪙 5, keliling pulau sampai ±32 m, ada PUTARAN terbalik
+                     di atas laut utara, miring di tikungan, gerak mulus.
+                     Muat 6 orang (3 gerbong x 2 kursi); kalau penuh, tunggu
+                     putaran berikutnya. Stasiun di pantai barat (naik tangga).
+    🚣 Kora-kora     🪙 3, perahu ayun
+    🚙 Bom-bom Car   🪙 2, 1 menit, arena luas (±37 x 12 m) dengan 6 mobil lain
+    🏰 Istana Balon  gratis, lompat-lompat tinggi
+    🕹️ Mesin Capit   🪙 1, kadang dapat stiker (di Mall Kota)
+    🍜 Food Court    🪙 5, makan → nyawa +1 (Mall Kota lantai 2, naik tangga)
+    🎡 Bianglala     🪙 3, satu putaran (±50 detik)
+    🎠 Komidi Putar  🪙 2, ±30 detik
+    🏙️ Menara Kota   🪙 3, lift ke dek pandang 60 m (turun gratis)
+    🍦 Es krim       🪙 1 (di Taman Kota)
+    🚗 Sewa Mobil    🪙 10 / 3 menit, muat 4 orang
+    🦁 Kebun Binatang Nusantara: gajah & harimau Sumatra, orangutan, komodo,
+                     jerapah & zebra, pinguin, kandang elus kelinci & kambing.
+                     Hewan bergerak di kandang berhabitat. Papan info tiap kandang:
+                     fakta + suara hewan + kuis (⭐). Beri makan 🪙 1 = hewan datang
+                     mendekat. Elus hewan gratis.
+    🪂 Flying Fox    🪙 3, dari menara 30 m di pantai selatan meluncur ±200 m
+                     di atas jalan kota sampai panggung di pantai utara (±30 detik)
+    🧸 Toko Stiker   🪙 4 per stiker, jadi emotikon baru (12 untuk dikoleksi)
+    🏎️ Lomba Balap   🪙 3, gokart lewati 4 gerbang di jalan lingkar lalu finis;
+                     medali emas/perak/perunggu, rekor baru = bonus ⭐
+    🚂 Kereta        🪙 2, lokomotif uap berasap, keliling tepi kota lewat
+                     jembatan layang (barat laut) dan terowongan bukit (timur),
+                     4 stasiun, muat 12 orang (turun di stasiun mana saja)
+- Gratis: 📚 Perpustakaan, bisa dimasuki. BACA BUKU bergambar yang
+  dibacakan suara: 19 buku dalam 4 rak (Nabi & Rasul, Pahlawan, Orang Tua &
+  Akhlak, Dongeng). Tamat pertama kali = +1 ⭐ per buku. Dalam kisah nabi,
+  nabi tidak digambar; gambarnya hanya benda & alam. Bu Ratna juga punya kuis.
+  Lalu 🛒 Supermarket
+  (bisa masuk ke dalam: rak, kulkas; kasir Mbak Dewi memberi soal
+  menghitung uang belanja, dapat ⭐), 🚦 Pak Polantas
+  di perempatan tengah (kuis aturan lalu lintas, dapat ⭐), 🚓 Kantor Polisi
+  & 🚒 Pemadam Kebakaran (cerita profesi + bunyikan sirene), warga kota.
+- Mobil lalu-lalang di jalan lingkar akan membunyikan klakson dan
+  mendorong anak ke pinggir (belajar hati-hati di jalan). Ada zebra cross
+  dan lampu lalu lintas.
+- Kota kini lebih ramai dan tidak terlalu kotak: pulau berbentuk membulat,
+  tikungan jalan lingkar melengkung, pohon kelapa & payung pantai, gedung
+  dengan atap limas, kubah kaca, taman atap, menara bulat, deretan ruko,
+  papan reklame, dan lebih banyak warga & mobil.
+- KOTA RAMAI (jajan & main, semua tutup saat malam):
+    ⛲ Alun-alun   ☕ Kafe Kita (cokelat hangat, susu stroberi, jus jeruk 🪙 2;
+                   panekuk 🪙 3), 🍞 Toko Roti (kue ulang tahun 🪙 5 dengan lagu
+                   ulang tahun!), 🍉 Lapak Buah (🪙 1 per buah + fakta buah;
+                   ngobrol dengan Pak Darto = kuis warna buah, dapat ⭐),
+                   gerobak 🍲 bakso, 🍢 sate, 🥞 martabak (🪙 3, makan = ❤️ +½),
+                   🥥 es kelapa/cendol (🪙 2). 🎶 Kang Asep main angklung
+                   (lagu atau belajar nada do-re-mi). Bendera & lampion yang
+                   menyala saat senja.
+    🗽 Tugu       sepasang ondel-ondel menari diiringi musik Betawi,
+                   🍳 kerak telor, 🎈 penjual balon (🪙 1, balon dipegang anak
+                   sampai malam), 📸 titik foto (gratis).
+    🌳 Taman      🛝 perosotan, 🎢 ayunan, 🌀 putar-putar (gratis), bak pasir,
+                   kolam bebek, layang-layang, keluarga piknik, 🍭 gulali.
+    🏬 Mall 5 lantai (atrium terbuka & kubah kaca, tangga tiap lantai, 🛗 lift kaca
+                   gratis ke lantai mana saja): L1 lobi & mainan, L2 fashion, L3 toko
+                   mainan/game center/buku, L4 food court, L5 bioskop & taman bermain.
+                   Isi lain: deretan toko (Butik, 🍬 Toko Permen, 📸 Foto Box), 🟡 mandi
+                   bola (gratis, bolanya terdorong), 🐴 kuda goyang & 🚙 mobil
+                   goyang (🪙 1), lengkung balon, untaian bendera, papan LED,
+                   food court dengan kios bakso/nasi goreng/jus, pengunjung.
+    🐦 Merpati di alun-alun & tugu: kalau dikejar, terbang berputar lalu
+       mendarat lagi. Ketuk "Beri makan merpati" lalu diam: mereka datang.
+    👨‍👩‍👧 Lebih dari 100 warga berjalan di trotoar, antre di gerobak, duduk
+       di kafe, menunggu bus, dan melambai saat anak mendekat.
+- MALAM di kota: semua warga, penjual, mobil, bus, dan wahana berhenti/hilang;
+  kota jadi dunia zombie. Zombie muncul dari gorong-gorong. Zona aman kota selalu
+  sama: Taman Kota 🌳, Alun-alun ⛲, dan Tugu Kota 🗽 (lingkaran hijau).
+  Bus, kapal, wahana, dan toko tutup saat malam; mobil sewaan tetap boleh.
+- Peta 🗺️ menampilkan pulau tempat anak berada. Tombol rumah di kota
+  membawa ke Alun-alun.
+
+HADIAH KOIN DARI ORANG TUA 🎁
+- Menu orang tua > tabel Pemain > tombol 🎁 di bawah nama: pilih +5/+10/+20/+50/+100 koin.
+  Pemain yang sedang main langsung menerima (ada perayaan); yang tidak sedang
+  main menerimanya saat masuk berikutnya.
+
+SIANG/MALAM & TAMBAH ZOMBIE (menu orang tua > Siang, malam & zombie)
+- Hanya saat MALAM: +5, +10, +50, +100, atau ketik jumlah sendiri (1–200). Paling banyak 40 zombie
+  muncul bersamaan (25 di grafis ringan); sisanya keluar bergiliran.
+
+JEDA (PAUSE) ⏸️
+- Tombol ⏸️ di kiri atas. Saat dijeda anak berhenti bermain: aman dari zombie,
+  tidak terlihat teman, waktu main tidak dihitung. Waktu dunia tetap berjalan
+  (main bersama). Ketuk "Lanjut main" untuk lanjut dari tempat terakhir.
+- Otomatis dijeda kalau layar dimatikan, aplikasi/tab ditinggal.
+
+MENCARI KOIN DI KOTA
+- Di Pulau Balok: 1 bintang belajar = 5 koin (tukar di Toko).
+- Di Pulau Kota: jawab benar soal dari kasir supermarket, Pak Polantas,
+  Bu Ratna (perpustakaan), Pak Darto (lapak buah), dan papan kebun binatang
+  = 1 koin langsung (paling sering sekali per menit per warga). Mencari uang di
+  kota lebih susah daripada di desa, tapi anak tidak akan terjebak tanpa koin
+  untuk naik kapal pulang (🪙 5).
+
+RAJA ZOMBIE MENAHAN PAGI
+- Kalau Raja Zombie sudah muncul di pulau yang sama dengan pemain yang masih
+  hidup, pagi otomatis TIDAK datang sebelum Raja dikalahkan (zombie biasa tidak
+  menahan). Pengecualian: semua pemain sudah kehabisan nyawa, atau Raja ada di
+  pulau lain. Pengaman: paling lama 5 menit tambahan. Mengubah siang/malam lewat
+  menu orang tua tetap langsung berlaku.
+
+ZOMBIE DI DUA PULAU
+- Zombie (termasuk yang kuat) dibagi sesuai jumlah pemain aktif di tiap pulau,
+  muncul di dekat pemain atau dari gorong-gorong/air mancur terdekat. Raja Zombie
+  muncul di pulau yang paling ramai pemain.
+
+ZOMBIE MAKIN KUAT (adaptif)
+- Kalau semua zombie dihabisi sebelum gelombang selesai, langsung datang
+  SERBUAN baru dan zombie naik level (sampai level 6): lebih cepat, lebih tahan,
+  lebih banyak, jenisnya lebih berat. Level kembali 0 setiap malam baru.
+
 WARGA PULAU (NPC)
 - Lebih dari 40 warga: Pak Budi (guru), Sinta, Bu Sari (kantin), Dodi, Pak Joko
   (satpam gedung), Nenek Ijah, Tono, Mimi, Kak Gilang (pendaki), Kapten
@@ -259,10 +416,44 @@ SIANG, MALAM & ZOMBIE
 - Siang dan malam berganti otomatis (bawaan: siang 15 menit, malam 5 menit),
   sama di semua perangkat. Saat malam, lampu-lampu menyala.
 - 1 menit sebelum malam ada peringatan (suara, bunyi, hitung mundur).
-- Saat malam, zombie kartun keluar dari air mancur di tengah pulau dan
-  mendekati pemain. Makin menjelang pagi, makin banyak. Saat pagi, semua
-  zombie hilang. Zombie tidak bisa naik ke atap, menara, atau gunung, dan
-  tidak menembus dinding bangunan.
+- Saat malam, zombie kartun datang dalam GELOMBANG (2–6, tergantung lama
+  malam; bawaan 5 menit = 4 gelombang). Ada 12 detik bersiap, lalu tiap
+  gelombang diselingi ISTIRAHAT 12 detik untuk isi amunisi & nyawa.
+  Banner di atas layar mengumumkan gelombang; chip malam menulis
+  "🧟 2/4 ⚔️" (sedang menyerang) atau "☕" (istirahat).
+- Zombie muncul dari LINGKARAN UNGU di tanah (tanda 1 detik sebelumnya),
+  di sekitar pemain, di air mancur, atau gorong-gorong kota. Saat melihat
+  pemain, zombie berteriak (tanda ❗) lalu mengepung dari arah berbeda.
+- Jenis zombie (gaya kartun, tanpa darah):
+    🟢 Zombie biasa       berjalan mendekat
+    🟠 Zombie Lari        cepat dan berzig-zag
+    🟣 Zombie Raksasa     lambat, kuat, dorongannya keras
+    🔵 Zombie Pelompat    jongkok lalu melompat menerjang
+    🟡 Zombie Lendir      menjaga jarak & meludah lendir; tempat jatuhnya
+                          ditandai lingkaran hijau: menyingkirlah!
+    👑 Raja Zombie        bos di gelombang terakhir: nyawanya besar (ada
+                          bar nyawa di atas layar), memanggil anak buah, dan
+                          menghentak tanah (lingkaran merah membesar).
+                          LOMPAT saat gelombang merah lewat supaya tidak kena.
+  Setiap serangan diawali ANCANG-ANCANG (tangan naik, berkedip merah)
+  sehingga anak sempat menghindar. Memukul/menembak zombie yang sedang
+  ancang-ancang membatalkan serangannya (kecuali Raja Zombie).
+- Zombie yang kalah terpental, jatuh terjengkang, lalu pecah jadi bintang;
+  koin terbang ke pemain yang mengalahkan (kadang juga 📦 amunisi atau ❤️).
+  Raja Zombie kalah = semua pemain di pulau itu dapat 🪙 5.
+- COMBO: kalahkan zombie beruntun (jeda < 3,5 detik) untuk bonus koin
+  (x3 +1, x5 +2, x8 +3, x12 +5). Angka kerusakan muncul di atas zombie;
+  kadang KRITIS (kerusakan ganda).
+- BINTANG SUPER 🌟: tombol bulat di samping tombol tembak terisi tiap
+  mengalahkan zombie; setelah 10, ketuk untuk ledakan bintang yang
+  menghempas semua zombie di sekitar.
+- PAGI: semua zombie meleleh masuk tanah, lalu muncul RINGKASAN MALAM
+  (jumlah zombie, combo terbaik, Raja kalah) + 🪙 3 bonus bila bertahan
+  sampai pagi tanpa kehabisan nyawa.
+- Suasana malam: musik dag-dig-dug (makin cepat saat gelombang & bos),
+  erangan zombie di dekat, detak jantung saat nyawa tinggal 1, layar
+  bergetar saat terkena. Zombie tidak bisa naik ke atap, menara, atau
+  gunung, dan tidak menembus dinding bangunan.
 - ZONA AMAN BERGILIR: saat malam hanya beberapa tempat bermain yang aman
   (cincin hijau menyala + sorot cahaya hijau), dipilih acak dan berpindah
   tiap beberapa saat. Papan JUARA tiap tempat menunjukkan "AMAN 0:42" atau
@@ -284,9 +475,14 @@ SIANG, MALAM & ZOMBIE
 - Jika SEMUA pemain kehabisan nyawa, zombie hanya berkeliaran selama waktu
   istirahat (bawaan 30 detik), lalu pagi datang.
 - Pemain bisa memukul (👊) dan menembak (🔫) dengan senjata mainan.
+- KOMBO BELA DIRI 👊: tekan berulang (atau tahan) tombol pukul: tinju kanan →
+  tinju kiri → tendangan → TENDANGAN BERPUTAR (mengenai zombie di sekeliling &
+  mementalkan jauh). Badan, tangan, dan kaki ikut bergerak; teman melihat
+  gerakannya. Tombol pukul & lompat bisa ditekan sambil menahan joystick.
   Kekuatan zombie mengikuti tingkat kesulitan tiap pemain: tingkat Mudah
   mengalahkan zombie lebih cepat dan terluka lebih sedikit.
-- Laptop: J = pukul, K = tembak.
+- Laptop: J = pukul, K = tembak, L = Bintang Super. HP/tablet: TAHAN tombol
+  tembak untuk menembak terus.
 - Tembakan membidik otomatis zombie terdekat (dari arah mana pun) dan
   pelurunya mengejar zombie itu, jadi anak tidak perlu membidik.
 - Saat semua pemain berlindung di zona aman, zombie tidak kembali ke air
@@ -297,14 +493,14 @@ SIANG, MALAM & ZOMBIE
 
 TOKO (🛒)
 - Bintang ⭐ dari belajar ditukar menjadi koin 🪙 (1 bintang = 5 koin).
-  Mengalahkan zombie juga memberi 1 koin.
+  Mengalahkan zombie juga memberi koin (1–3, Raja Zombie 15) + bonus combo.
 - Koin untuk membeli senjata (pedang kayu, palu mainan, ketapel, pistol
   air, blaster gelembung, meriam konfeti), amunisi, dan nyawa.
 
-ATUR DUNIA (khusus akun orang tua)
-- Tombol 🌗 (hanya muncul untuk Ayah/Ibu/Kakek/Nenek/Paman/Bibi): jadikan
-  malam/siang sekarang, atau tambah 5/10 zombie. Selalu diverifikasi soal.
-- Di menu Orang Tua: lama siang, lama malam, jumlah zona aman, seberapa
+ATUR DUNIA (menu Orang Tua, diverifikasi soal)
+- Kotak "Siang, malam & zombie": jadikan malam/siang sekarang, dan (hanya saat
+  malam) tambah zombie. Zombie yang tersisa di siang hari langsung meleleh.
+- Juga di menu Orang Tua: lama siang, lama malam, jumlah zona aman, seberapa
   sering zona aman berpindah, lama istirahat bila semua kehabisan nyawa,
   siang-malam otomatis nyala/mati, dan zombie nyala/mati.
 

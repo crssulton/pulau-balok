@@ -5,6 +5,7 @@ import { listen, stopListen, srSupported, isMatch, numWords } from './listen.js'
 import { connect, send, stopNet, net, addPeer, removePeer, onRtc, micOn, micOff, voiceLevel, setPeerVolume } from './net.js';
 import { initPad, closePad, padOpen, tracePad, TRACE, drawPad, EXAMPLES, EXAMPLE_NAMES, puzzlePad, SCENE_COUNT } from './pad.js';
 import * as W from './world.js';
+import * as KOTA from './city.js';
 
 /* =========================================================
    UTIL
@@ -51,6 +52,12 @@ const HATS = {
   peci: { name: 'Peci', zone: 'iqro' },
   pesulap: { name: 'Topi Pesulap', zone: null },
   pendaki: { name: 'Helm Pendaki', zone: null, tower: true },
+  koboi: { name: 'Topi Koboi', zone: null, shop: 15, e: '🤠' },
+  kacamata: { name: 'Kacamata Keren', zone: null, shop: 15, e: '😎' },
+  polisi: { name: 'Topi Polisi', zone: null, shop: 20, e: '👮' },
+  koki: { name: 'Topi Koki', zone: null, shop: 20, e: '👨‍🍳' },
+  pemadam: { name: 'Helm Pemadam', zone: null, shop: 25, e: '🚒' },
+  emas: { name: 'Mahkota Emas', zone: null, shop: 40, e: '👑' },
 };
 const ZONE_IDS = ['kebun', 'warna', 'hewan', 'pola', 'bentuk', 'ikan', 'musik', 'kembar', 'ukuran', 'rasa', 'tulis', 'mtk', 'gambar', 'puzzle', 'huruf', 'angka', 'iqro'];
 // petualangan: kumpulkan Kristal Pelangi di setiap tempat, bab demi bab
@@ -70,6 +77,7 @@ const DEFAULT = {
   avatar: { shirt: 'biru', pants: 'hitam', skin: 1, hat: 'none', gender: 'L' },
   hats: ['none'], stars: 0, greeted: false, story: false, crystals: [], chapterDone: [],
   coins: 0, ammo: 0, hp: 3, maxHp: 5, weapons: ['tangan'], melee: 'tangan', gun: null, zkills: 0, summits: 0,
+  emotes: [], raceBest: 0, lastPos: null, booksRead: [], // koleksi stiker, rekor balap, posisi terakhir (checkpoint), buku yang sudah tamat dibaca
   zones: Object.fromEntries(ZONE_IDS.map((id) => [id, zoneBlank()])),
   // per pemain (diatur orang tua): level 0 = otomatis menyesuaikan, 1–4 = tetap; limit = menit per hari
   settings: { limit: 20, level: 0 },
@@ -162,7 +170,10 @@ function loadVoices() {
 if (hasTTS) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
 // ucapan untuk mesin suara (teks di layar tetap apa adanya)
 function spoken(t) {
-  return t.replace(/\bHmm+\b/g, 'Hemm').replace(/\bmm+\b/gi, 'hem').replace(/"/g, '').replace(/\s+/g, ' ').trim();
+  // vokal dipanjangkan sedikit di kata seru supaya terdengar hangat & bersemangat, emoji tidak dibacakan
+  return t.replace(/\p{Extended_Pictographic}|\uFE0F|\u200D/gu, '').replace(/\bHmm+\b/g, 'Hemm').replace(/\bmm+\b/gi, 'hem')
+    .replace(/\bHore+\b/g, 'Horee').replace(/\bYeay\b/gi, 'Yeeay').replace(/\bWah\b/g, 'Waah').replace(/\bAyo\b/g, 'Ayoo').replace(/\byuk\b/g, 'yuuk').replace(/\bya([!.])/g, 'yaa$1')
+    .replace(/"/g, '').replace(/\s+/g, ' ').trim();
 }
 function sentences(text) {
   const parts = text.match(/[^.!?…]+[.!?…]*/g) || [text];
@@ -174,18 +185,21 @@ function speak(text, { calm = false, pitch: pOff = 0 } = {}) {
     speechSynthesis.cancel(); lastSpeakAt = performance.now();
     const gen = ++speakGen;
     const parts = sentences(text);
-    const base = dev.rate;
+    // gaya kakak pendongeng yang ceria: nada dasar lebih tinggi & tempo sedikit cepat;
+    // kata seru pendek di awal paling bersemangat, pertanyaan naik, kalimat bercerita (calm) lebih pelan & hangat
+    const base = dev.rate * (calm ? 1 : 1.08);
     parts.forEach((p, i) => {
       const u = new SpeechSynthesisUtterance(spoken(p));
       u.lang = voiceId?.lang || 'id-ID'; if (voiceId) u.voice = voiceId;
-      const ask = /\?$/.test(p), cheer = /!$/.test(p), single = parts.length === 1 && p.split(' ').length <= 2;
-      const soft = /^(hemm|hmm|hmm,|nah|pelan|tarik napas|kalau)/i.test(p) || calm;
-      let pitch = 1 + jit(-0.03, 0.03), rate = base * jit(0.97, 1.03);
-      if (ask) { pitch += 0.06; rate *= 0.97; }
-      if (cheer && !single) { pitch += 0.05; rate *= 1.04; }
-      if (soft) { pitch -= 0.03; rate *= 0.92; }
-      if (i === parts.length - 1 && parts.length > 1) rate *= 0.97; // melambat di akhir, seperti orang bercerita
-      u.pitch = clamp(clamp(pitch, 0.85, 1.15) + pOff, 0.4, 1.9); u.rate = clamp(rate, 0.6, 1.3);
+      const words = p.split(' ').length, ask = /\?$/.test(p), cheer = /!$/.test(p), interj = cheer && words <= 3 && i === 0 && parts.length > 1;
+      const soft = /^(hemm|hmm|sstt|pelan|tarik napas|yah|yaah)/i.test(p) || calm;
+      let pitch = calm ? 1.04 : 1.12, rate = base;
+      if (interj) { pitch += 0.16; rate *= 1.1; }
+      else if (cheer) { pitch += 0.08; rate *= 1.05; }
+      if (ask) { pitch += 0.08; rate *= 0.98; }
+      if (soft && !calm) { pitch -= 0.06; rate *= 0.93; }
+      pitch += jit(-0.01, 0.01);
+      u.pitch = clamp(pitch + pOff, 0.4, 1.9); u.rate = clamp(rate, 0.6, 1.4);
       u.onerror = (e) => {
         // suara online (mis. Google) gagal saat tanpa internet: tandai, pakai suara lain, ulangi sekali
         if (gen !== speakGen || !voiceId || voiceId.localService || badVoices.has(voiceId.voiceURI) || /interrupt|cancel/.test(e.error || '')) return;
@@ -216,17 +230,14 @@ function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = fals
 
 const ROLES_ADULT = new Set(['ayah', 'ibu', 'kakek', 'nenek', 'paman', 'bibi']);
 const PRAISE = [
-  'Kamu teliti sekali!', 'Kerja bagus, kamu fokus!', 'Kamu memperhatikan baik-baik, ya!',
-  'Kamu berpikir dulu sebelum memilih. Keren!', 'Bagus, kamu mencoba sendiri!',
-  'Kak Rara senang lihat kamu serius begitu.', 'Wah, kamu sabar sekali tadi.', 'Pelan-pelan tapi pasti. Mantap!',
+  'Teliti sekali!', 'Keren, kamu fokus!', 'Mantap!', 'Wah, pintar!', 'Hebat, kamu mencoba sendiri!', 'Yeay, jago!', 'Sip, sabar sekali!',
 ];
 const PRAISE_RETRY = [
-  'Kamu tidak menyerah. Hebat!', 'Kamu terus mencoba sampai bisa!', 'Tadi sulit, tapi kamu coba lagi. Keren!',
-  'Salah itu tidak apa-apa, yang penting kamu mencoba lagi.', 'Nah, akhirnya bisa juga! Kak Rara bangga.',
+  'Kamu tidak menyerah. Hebat!', 'Nah, bisa juga! Keren!', 'Coba lagi sampai bisa. Mantap!', 'Akhirnya bisa! Kak Rara bangga!',
 ];
 // pembuka acak supaya Kak Rara tidak selalu mengucapkan kalimat yang sama
 const YAY = ['Yeay!', 'Hore!', 'Wah, betul!', 'Iya, betul sekali!', 'Asyik!', 'Nah, itu dia!'];
-const OOPS = ['Hmm, belum tepat.', 'Eh, hampir!', 'Oh, bukan yang itu.', 'Hmm, coba lagi, ya.'];
+const OOPS = ['Eits, belum tepat!', 'Eh, hampir!', 'Ups, bukan yang itu!', 'Hmm, coba lagi, yuk!'];
 function greeting() {
   const h = new Date().getHours();
   return h < 11 ? 'Selamat pagi!' : h < 15 ? 'Selamat siang!' : h < 18 ? 'Selamat sore!' : 'Selamat malam!';
@@ -507,19 +518,37 @@ function staticBatch(roots, skip = new Set()) {
   scene.updateMatrixWorld(true);
   const groups = new Map(); const remove = [];
   for (const root of roots) root.traverse((o) => {
-    if (!o.isMesh || o.isInstancedMesh || o.geometry !== BOX || Array.isArray(o.material) || o.material.map || o.material.transparent || o.material === HIT_MAT) return;
+    if (!o.isMesh || o.isInstancedMesh || (o.geometry !== BOX && !o.geometry.userData.batch) || Array.isArray(o.material) || o.material.map || o.material.transparent || o.material === HIT_MAT) return;
     for (let q = o; q; q = q.parent) if (skip.has(q) || q.userData?.tap || q.userData?.dynamic) return;
-    const key = o.material.uuid + (o.castShadow ? ':s' : '');
-    if (!groups.has(key)) groups.set(key, { mat: o.material, cast: o.castShadow, list: [] });
+    const key = o.geometry.uuid + o.material.uuid + (o.castShadow ? ':s' : ''); // geometri bersama (kotak, silinder, kubah) ikut digabung
+    if (!groups.has(key)) groups.set(key, { geo: o.geometry, mat: o.material, cast: o.castShadow, list: [] });
     groups.get(key).list.push(o.matrixWorld.clone()); remove.push(o);
   });
   for (const o of remove) o.parent.remove(o);
+  const made = [];
   for (const g of groups.values()) {
-    const im = new THREE.InstancedMesh(BOX, g.mat, g.list.length);
+    const im = new THREE.InstancedMesh(g.geo, g.mat, g.list.length);
     g.list.forEach((m, i) => im.setMatrixAt(i, m));
-    im.castShadow = g.cast; im.receiveShadow = true; im.frustumCulled = false; scene.add(im);
+    im.castShadow = g.cast; im.receiveShadow = true; im.frustumCulled = false; scene.add(im); made.push(im);
   }
-  return remove.length;
+  return made;
+}
+// checkpoint otomatis: posisi aman terakhir disimpan bersama data pemain, lalu dipakai saat main lagi
+function captureCheckpoint() {
+  if (!playing || me.down || activeZone || veh.kind || ride || transit || care.on || para.phase || !player.onGround || swimming() || player.standOn?.moving || camMode !== 'follow') return;
+  save.lastPos = { x: +player.pos.x.toFixed(1), z: +player.pos.z.toFixed(1), y: +player.y.toFixed(2), cp: climb.cp || 0, ready: climb.ready ? 1 : 0 };
+}
+function resumeCheckpoint() {
+  const p = save.lastPos; if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) return false;
+  teleport(p.x, p.z, Math.max(0, p.y || 0)); climb.cp = p.cp || 0; climb.ready = !!p.ready;
+  toast(`📍 Lanjut dari posisi terakhir${W.islandOf(p.x, p.z) === 'kota' ? ' di Pulau Kota' : ''}`); return true;
+}
+// dua pulau digabung terpisah; pulau yang jauh tidak digambar (hemat untuk tablet)
+const islandGfx = { balok: [], kota: [], showB: true, showK: true };
+function islandCull() {
+  const showB = Math.hypot(player.pos.x, player.pos.z) < 290, showK = Math.hypot(player.pos.x - W.CITY.x, player.pos.z - W.CITY.z) < 270;
+  if (showB !== islandGfx.showB) { islandGfx.showB = showB; for (const o of islandGfx.balok) o.visible = showB; }
+  if (showK !== islandGfx.showK) { islandGfx.showK = showK; for (const o of islandGfx.kota) o.visible = showK; }
 }
 const waterMat = new THREE.MeshLambertMaterial({ color: '#4cb4ea' });
 function buildIsland() {
@@ -551,7 +580,7 @@ function buildIsland() {
     under.setColorAt(i * 2 + 1, c.set('#8b6a4b'));
   });
   scene.add(top, under);
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), waterMat);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), waterMat); // laut cukup luas untuk dua pulau
   water.rotation.x = -Math.PI / 2; water.position.y = -0.85; water.receiveShadow = true; scene.add(water);
   buildLandmarks();
   // pohon
@@ -734,6 +763,23 @@ function makeHat(id) {
     ['#e8434b', '#ff8a2a', '#ffd23a', '#3fb25a', '#3a7cf5', '#9a62e0'].forEach((c, i) => box(1.0 - i * 0.02, 0.07, 1.0 - i * 0.02, c, 0, 0.04 + i * 0.07, 0, g));
     for (const [x, z] of [[-0.4, 0.4], [0, 0.4], [0.4, 0.4], [-0.4, -0.4], [0.4, -0.4], [-0.4, 0], [0.4, 0]]) box(0.14, 0.26, 0.14, '#ffd23a', x, 0.55, z, g);
     const gem = new THREE.Mesh(CRYSTAL_GEO, new THREE.MeshLambertMaterial({ color: '#ff7ac8', emissive: '#ff7ac8', emissiveIntensity: 0.4 })); gem.scale.setScalar(0.5); gem.position.set(0, 0.5, 0.5); g.add(gem);
+  } else if (id === 'koboi') {
+    box(1.7, 0.08, 1.5, '#a5764a', 0, 0.02, 0, g); box(0.86, 0.5, 0.8, '#a5764a', 0, 0.3, 0, g); box(0.88, 0.1, 0.82, '#5b3b22', 0, 0.12, 0, g);
+    for (const sx of [-0.8, 0.8]) box(0.12, 0.2, 1.5, '#a5764a', sx, 0.1, 0, g);
+  } else if (id === 'kacamata') {
+    for (const sx of [-0.22, 0.22]) box(0.34, 0.22, 0.06, '#1d1d1d', sx, -0.56, 0.47, g, false);
+    box(0.12, 0.05, 0.06, '#1d1d1d', 0, -0.52, 0.47, g, false); box(0.9, 0.05, 0.05, '#1d1d1d', 0, -0.5, 0.45, g, false);
+  } else if (id === 'polisi') {
+    box(1.0, 0.32, 1.0, '#1d2b53', 0, 0.12, 0, g); box(1.06, 0.12, 1.06, '#1d2b53', 0, 0.32, 0, g); box(0.9, 0.06, 0.5, '#111a33', 0, 0.0, 0.6, g);
+    box(0.22, 0.22, 0.05, '#ffd23a', 0, 0.2, 0.52, g, false);
+  } else if (id === 'koki') {
+    box(0.98, 0.22, 0.98, '#ffffff', 0, 0.08, 0, g); box(1.15, 0.6, 1.15, '#ffffff', 0, 0.5, 0, g); box(0.8, 0.25, 0.8, '#f4f4f4', 0, 0.9, 0, g);
+  } else if (id === 'pemadam') {
+    box(1.04, 0.42, 1.04, '#e8434b', 0, 0.16, 0, g); box(1.1, 0.08, 1.4, '#e8434b', 0, -0.02, -0.15, g); box(0.3, 0.3, 0.05, '#ffd23a', 0, 0.25, 0.53, g, false); box(0.12, 0.12, 1.06, '#c23a3a', 0, 0.42, 0, g);
+  } else if (id === 'emas') {
+    box(1.0, 0.3, 1.0, '#ffc93c', 0, 0.12, 0, g); box(0.82, 0.31, 0.82, '#3b2a20', 0, 0.14, 0, g);
+    for (const [x, z] of [[-0.42, 0.42], [0, 0.42], [0.42, 0.42], [-0.42, -0.42], [0.42, -0.42], [-0.42, 0], [0.42, 0], [0, -0.42]]) box(0.16, 0.3, 0.16, '#ffc93c', x, 0.4, z, g);
+    for (const [x, c] of [[-0.3, '#e8434b'], [0, '#3a7cf5'], [0.3, '#3fb25a']]) box(0.12, 0.12, 0.05, c, x, 0.15, 0.52, g, false);
   } else if (id === 'pendaki') {
     box(1.02, 0.34, 1.02, '#ffc93c', 0, 0.12, 0, g); box(0.78, 0.18, 0.78, '#ffc93c', 0, 0.36, 0, g); box(1.24, 0.06, 1.3, '#e6a91f', 0, -0.03, 0.06, g);
     box(0.12, 0.08, 1.04, '#e6a91f', 0, 0.46, 0, g); box(0.3, 0.22, 0.1, '#ffffff', 0, 0.12, 0.55, g, false); box(0.2, 0.14, 0.04, '#fff3a0', 0, 0.12, 0.61, g, false);
@@ -766,13 +812,12 @@ function applyAvatar() { applyAvatarTo(player.ch, save.avatar); updateHand(); }
 const marker = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.55, 24), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9 }));
 marker.rotation.x = -Math.PI / 2; marker.visible = false;
 function walkTo(x, z, onArrive = null) {
-  const d = Math.hypot(x, z); const lim = edgeR(x, z) - 2.4;
-  if (d > lim) { x *= lim / d; z *= lim / d; }
+  const q = { x, z }; if (!W.onLand(x, z, 2.4)) W.clampLand(q, 2.4); x = q.x; z = q.z;
   player.target = new THREE.Vector3(x, 0, z); player.onArrive = onArrive; player.stuck = 0;
   marker.position.set(x, player.y + 0.05, z); marker.visible = true; marker.scale.setScalar(1); marker.material.opacity = 0.9;
 }
 // lompat: boleh sesaat setelah meninggalkan pijakan, dan tombol yang ditekan sedikit terlalu cepat tetap dihitung
-function jump() { if (para.phase === 1) { openChute(); return; } if (veh.kind === 'jetski' || veh.kind === 'plane' || ride) return; player.jumpBuf = 0.2; tryJump(); }
+function jump() { if (para.phase === 1) { openChute(); return; } if (veh.kind === 'jetski' || veh.kind === 'plane' || ride || transit || care.on) return; player.jumpBuf = 0.2; tryJump(); }
 function tryJump() {
   if (player.jumpBuf <= 0 || player.vy > 0 || !(player.onGround || player.coyote > 0)) return;
   player.vy = 8; player.onGround = false; player.coyote = 0; player.jumpBuf = 0; SFX.jump();
@@ -784,6 +829,7 @@ function teleport(x, z, y = 0) {
   player.y = y; player.vy = 0; player.peak = y; player.onGround = false; para.phase = 0;
   if (veh.kind && !veh.ending) endRide('map');
   if (ride && !veh.ending) leaveRide(true, true);
+  if (transit && !veh.ending) { transit = null; climb.transitExit = null; hideAction(); $('#vehChip').hidden = true; }
   burst(new THREE.Vector3(x, 1.5 + y, z), ['#ffffff', '#7cc8f5', '#ffd23a']);
 }
 
@@ -854,6 +900,7 @@ function onTap(cx, cy) {
     const t = findTap(h.object);
     if (t && (t.visible !== false)) { t.userData.tap(t); return; }
   }
+  if (IS_MOBILE) return; // HP/tablet: berjalan pakai joystick saja, ketuk tanah tidak memindahkan pemain (mouse di komputer tetap bisa)
   const p = new THREE.Vector3();
   groundPlane.constant = -player.y; // di atas bangunan/menara: ketuk = jalan di ketinggian yang sama
   if (!raycaster.ray.intersectPlane(groundPlane, p)) return;
@@ -982,6 +1029,7 @@ window.addEventListener('keydown', (e) => {
   if ((e.key === 'Enter' || e.key === 'f' || e.key === 'F') && nearZone && !activeZone) enterNear();
   if ((e.key === 'j' || e.key === 'J') && playing) punch();
   if ((e.key === 'k' || e.key === 'K') && playing) shoot();
+  if ((e.key === 'l' || e.key === 'L') && playing) useSuper();
 });
 window.addEventListener('blur', () => { keys.clear(); joyEnd(); });
 window.addEventListener('keyup', (e) => { keys.delete(e.key.toLowerCase()); if (e.key === ' ') player.jumpHeld = false; });
@@ -1067,7 +1115,7 @@ class Zone {
   makeIcon(builder) {
     const g = new THREE.Group(); g.position.set(this.cx, 6.2, this.cz); builder(g);
     hitBox(2.4, 2.4, 2.4, 0, 0, 0, g);
-    g.userData.tap = () => { if (activeZone) return; SFX.tap(); const [x, z] = this.approach(); walkTo(x, z); say(`Ayo ke ${this.name}! Nanti ketuk tombol Masuk, ya.`); };
+    g.userData.tap = () => { if (activeZone) return; SFX.tap(); const [x, z] = this.approach(); walkTo(x, z); toast(`🚶 Ke ${this.name}`); };
     scene.add(g); tapRoots.push(g); this.icon = g;
   }
   // titik di tepi zona, di sisi yang menghadap tengah pulau
@@ -1098,8 +1146,8 @@ class Zone {
     renderLobby(this);
     if (!this.lobbyGreeted) {
       this.lobbyGreeted = true;
-      say(this.isHost ? `Kamu yang pertama di ${this.name}! Ketuk Mulai kalau sudah siap. Mau menunggu teman dulu juga boleh.`
-        : `Kita tunggu ${remotes.get(this.host)?.name || 'teman'} memulai, ya.`, { stay: true, force: true });
+      say(this.isHost ? 'Ketuk Mulai kalau sudah siap, ya!'
+        : `Tunggu ${remotes.get(this.host)?.name || 'teman'} mulai, ya!`, { stay: true, force: true });
     }
   }
   startFromLobby() {
@@ -1187,7 +1235,7 @@ class Zone {
     if (!this.together) return;
     this.round.solved = true; this.round.locked = true; this.token++; hideAction(); this.hush = true;
     if (ok && this.kind !== 'quiz') celebrate('small');
-    say(this.kind === 'quiz' ? 'Jawabanmu sudah dikirim! Kita tunggu teman-teman, ya.' : 'Selesai! Kita tunggu teman-teman, ya.', { stay: true, force: true });
+    say(this.kind === 'quiz' ? 'Terkirim! Tunggu teman sebentar, ya.' : 'Selesai! Tunggu teman sebentar, ya.', { stay: true, force: true });
     renderRoundBar();
   }
   // bantuan otomatis bila anak diam lama: jawaban yang benar melompat-lompat + petunjuk Kak Rara
@@ -1211,19 +1259,19 @@ class Zone {
     if (this.round.errors === 0) { p.first++; this.streak++; this.missStreak = 0; } else { this.streak = 0; this.missStreak++; }
     let levelMsg = '';
     if (save.settings.level) { /* tingkat tetap dari orang tua */ }
-    else if (this.streak >= 3 && p.level < this.maxLevel) { p.level++; this.streak = 0; levelMsg = ' Kamu siap tantangan baru!'; }
+    else if (this.streak >= 3 && p.level < this.maxLevel) { p.level++; this.streak = 0; levelMsg = ' Naik level!'; }
     else if (this.missStreak >= 2 && p.level > 1) { p.level--; this.missStreak = 0; }
     save.stars++;
     // combo: benar berturut-turut tanpa salah & tanpa bantuan; tiap kelipatan 3 dapat bonus bintang
     if (this.round.errors === 0 && !this.round.hinted) this.combo = (this.combo || 0) + 1; else this.combo = 0;
     let bonus = '';
     if (this.combo >= 2) { floatText(`🔥 ×${this.combo}`); tone(988, 0.12, { type: 'triangle', vol: 0.1, delay: 0.25 }); }
-    if (this.combo > 0 && this.combo % 3 === 0) { save.stars++; bonus = ` Wah, ${this.combo} kali benar berturut-turut! Bonus satu bintang!`; }
+    if (this.combo > 0 && this.combo % 3 === 0) { save.stars++; bonus = ` ${this.combo} kali berturut-turut! Bonus bintang!`; }
     if (this.sharedRound) this.submit(true); // server mencatat skor
     else addLocalScore(this.id, this.round.errors === 0 ? 2 : 1);
     persist(); updateStars();
     SFX.good(); burst(new THREE.Vector3(this.cx, 2.2, this.cz - 1)); celebrate('big');
-    const heart = learnHeart() ? ' Karena kamu sudah belajar, Kak Rara kasih satu nyawa. Sekarang kamu siap kalau malam tiba!' : '';
+    const heart = learnHeart() ? ' Ini satu nyawa untukmu!' : '';
     say(`${line} ${pick(this.round.errors ? PRAISE_RETRY : PRAISE)}${bonus}${levelMsg}${heart}`, { stay: true });
     await wait(2200); await afterSpeech(6000); await wait(400);
     if (!this.alive(t)) return;
@@ -2776,7 +2824,7 @@ let nearZone = null, enterKey = '';
 const zoneCount = (z) => [...remotes.values()].filter((r) => r.zone === z.id).length;
 function checkZones() {
   let near = null;
-  if (!activeZone && playing && !paused() && !me.down && !veh.kind && !ride) {
+  if (!activeZone && playing && !paused() && !me.down && !veh.kind && !ride && !transit) {
     let best = 7.2;
     for (const z of Object.values(zones)) { const d = Math.hypot(player.pos.x - z.cx, player.pos.z - z.cz); if (d < best) { best = d; near = z; } }
   }
@@ -2820,6 +2868,26 @@ const TOGETHER = {
 };
 let modal = null;
 function paused() { return !!modal; }
+// jeda: pemain berhenti (aman dari zombie, tak terlihat teman); dunia tetap berjalan. Otomatis saat layar/tab ditinggal.
+function setPause(on, why = '') {
+  if (!playing || !!me.paused === on) return;
+  me.paused = on; lastMove = ''; moveTick = 1; sendMove(0);
+  if (on) {
+    player.target = null; marker.visible = false; if (eatSt.on) cancelEat();
+    for (const m of ['npcAsk', 'shop', 'books', 'book']) if (modal === m) closeModal(m);
+    $('#pauseWhy').textContent = why || 'Kamu sedang istirahat sebentar.'; openModal('pauseScr'); speechSynthesis?.cancel?.();
+  } else { closeModal('pauseScr'); SFX.tap(); toast('▶️ Lanjut main!'); me.inv = Math.max(me.inv || 0, 2); }
+}
+// menu orang tua dibuka saat bermain = jeda diam-diam (tanpa layar jeda); ditutup = lanjut otomatis
+function parentPause(on) {
+  if (!playing) return;
+  if (on) { if (me.paused) return; me.paused = true; me.byParent = true; player.target = null; marker.visible = false; if (eatSt.on) cancelEat(); }
+  else { if (!me.byParent) return; me.byParent = false; me.paused = false; me.inv = Math.max(me.inv || 0, 2); }
+  lastMove = ''; moveTick = 1; sendMove(0);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) return; if (me.byParent) { me.byParent = false; me.paused = false; } setPause(true, 'Dijeda otomatis karena layar ditinggal.'); });
+$('#pauseBtn').onclick = () => { SFX.tap(); setPause(true); };
+$('#resumeBtn').onclick = () => setPause(false);
 function openModal(id) { modal = id; $('#' + id).hidden = false; }
 function closeModal(id) { $('#' + id).hidden = true; if (modal === id) modal = null; }
 // setiap 5 ronde dalam satu kunjungan: sesi selesai, bonus bintang
@@ -2900,10 +2968,10 @@ function updateMission() {
 function tellMission() {
   const champ = championOf().map((id) => zones[id].name);
   const fav = Object.entries(net.online ? myScores : save.myScore || {}).sort((a, b) => b[1] - a[1])[0];
-  let line = `Misi kita: kumpulkan poin sebanyak-banyaknya, dan jadilah juara satu di tempat bermain kesukaanmu! Poinmu sekarang ${totalPoints()}.`;
-  if (champ.length) line += ` Kamu juara satu di ${champ.join(', ')}. Hebat!`;
-  else if (fav) line += ` Poinmu paling banyak di ${zones[fav[0]]?.name}. Sedikit lagi bisa jadi juara!`;
-  if (worldSt.phase === 'night') line += ' Hati-hati, ini malam. Cari zona aman yang hijau!';
+  let line = `Poinmu ${totalPoints()}! Ayo kumpulkan lebih banyak, jadi juara satu!`;
+  if (champ.length) line += ` Kamu juara di ${champ.join(', ')}!`;
+  
+  
   say(line);
 }
 async function unlockReward(z) {
@@ -2979,28 +3047,57 @@ function removeRemote(id) {
 }
 function greet(r) {
   SFX.tap(); send({ t: 'greet', to: r.id }); doEmote('👋');
-  say(`Halo, ${r.name}!`);
+  toast(`👋 Kamu menyapa ${r.name}`);
 }
 let moveTick = 0, lastMove = '';
+// kode pose 99 = sedang jeda: teman tidak melihat pemain ini & zombie tidak mengincarnya (tanpa perlu ubah server)
+const P_PAUSE = 99;
 function sendMove(dt) {
   if (!net.online || !net.id) return;
   moveTick += dt; if (moveTick < 0.1) return; moveTick = 0;
-  const m = { x: +player.pos.x.toFixed(2), z: +player.pos.z.toFixed(2), y: +player.y.toFixed(2), f: +player.facing.toFixed(2), m: player.moving ? 1 : 0, p: para.phase || vehCode() || (swimming() ? 3 : 0), pc: veh.pass.size };
+  const m = { x: +player.pos.x.toFixed(2), z: +player.pos.z.toFixed(2), y: +player.y.toFixed(2), f: +player.facing.toFixed(2), m: player.moving ? 1 : 0, p: me.paused ? P_PAUSE : para.phase || vehCode() || (swimming() ? 3 : 0), pc: veh.pass.size };
+  // menumpang: kirim siapa pengemudinya / token wahana, supaya perangkat lain menempelkan kita di kursi kendaraan yang MEREKA lihat
+  if (me.fseq) m.fm = me.fseq * 4 + (me.comboI || 0); // gerakan bela diri terakhir (teman ikut melihat)
+  if (ride) m.rd = `${ride.driver}:${ride.seat || 0}:${ride.kind}`;
+  if (transit) { const { t0, ...tk } = transit.tok; tk.age = +(Date.now() / 1000 - t0).toFixed(2); m.tk = tk; }
   const k = JSON.stringify(m); if (k === lastMove) return; lastMove = k; send({ t: 'move', ...m });
+}
+// posisi teman yang menumpang: di belakang pengemudi (pemain ini atau teman lain), atau di kursi wahana kota (dihitung dari jam sendiri)
+function ridingPose(r, t) {
+  if (t.rd) {
+    const [did, seat, kind] = String(t.rd).split(':'), back = (SEAT_BACK[kind] || 0.8) + (+seat || 0) * 0.8;
+    let p, f, y;
+    if (String(net.id) === did) { if (!veh.kind) return null; p = player.pos; f = player.facing; y = player.y; }
+    else { const d = [...remotes.values()].find((q) => String(q.id) === did); if (!d) return null; p = d.ch.root.position; f = d.ch.root.rotation.y; y = d.target.y || 0; }
+    return { x: p.x - Math.sin(f) * back, z: p.z - Math.cos(f) * back, y, yaw: f };
+  }
+  if (t.tk) { try { return KOTA.transitPose({ ...t.tk, t0: Date.now() / 1000 - t.tk.age - (performance.now() - (r.tkAt || performance.now())) / 1000 }); } catch (e) { return null; } }
+  return null;
 }
 function updateRemotes(dt) {
   for (const r of remotes.values()) {
     const root = r.ch.root, t = r.target;
-    const dx = t.x - root.position.x, dz = t.z - root.position.z, d = Math.hypot(dx, dz);
-    if (d > 20) root.position.set(t.x, 0, t.z); else { const k = 1 - Math.exp(-dt * 10); root.position.x += dx * k; root.position.z += dz * k; }
-    root.position.y = (t.y || 0) + (t.p === 3 ? -SWIM_DROP : VEH_OFF[t.p] || 0);
-    let rd = (t.f || 0) - root.rotation.y; rd = Math.atan2(Math.sin(rd), Math.cos(rd)); root.rotation.y += rd * Math.min(1, dt * 10);
-    const moving = t.m || d > 0.05; r.phase = moving ? r.phase + dt * 11 : r.phase * Math.pow(0.001, dt);
+    root.visible = !r.down && t.p !== P_PAUSE; if (t.p === P_PAUSE) continue; // teman yang sedang jeda tidak terlihat
+    const seat = ridingPose(r, t); let d = 0;
+    if (seat) { // menumpang: langsung di kursi kendaraan yang terlihat di layar ini (tanpa jeda sinkron)
+      root.position.set(seat.x, seat.y + (VEH_OFF[t.p] || 0), seat.z);
+      if (seat.q) root.quaternion.copy(seat.q); else root.rotation.set(-(seat.pitch || 0), seat.yaw, seat.roll || 0, 'YXZ');
+      r.seated = true;
+    } else {
+      if (r.seated) { r.seated = false; root.rotation.set(0, root.rotation.y, 0, 'XYZ'); }
+      const dx = t.x - root.position.x, dz = t.z - root.position.z; d = Math.hypot(dx, dz);
+      if (d > 20) root.position.set(t.x, 0, t.z); else { const k = 1 - Math.exp(-dt * 10); root.position.x += dx * k; root.position.z += dz * k; }
+      root.position.y = (t.y || 0) + (t.p === 3 ? -SWIM_DROP : VEH_OFF[t.p] || 0);
+      let rd = (t.f || 0) - root.rotation.y; rd = Math.atan2(Math.sin(rd), Math.cos(rd)); root.rotation.y += rd * Math.min(1, dt * 10);
+    }
+    const moving = !seat && (t.m || d > 0.05); r.phase = moving ? r.phase + dt * 11 : r.phase * Math.pow(0.001, dt);
     const sw = moving ? Math.sin(r.phase) * 0.7 : 0;
     r.ch.hipL.rotation.x = sw; r.ch.hipR.rotation.x = -sw; r.ch.shL.rotation.x = -sw; r.ch.shR.rotation.x = sw; r.ch.shR.rotation.z = 0;
     r.ch.body.position.y = moving ? Math.abs(Math.sin(r.phase)) * 0.08 : Math.sin(elapsed * 2 + r.id) * 0.02;
     poseSpecial(r.ch, t.p || 0, r.phase, r);
-    if (r.punchT > 0) { r.punchT -= dt; r.ch.shR.rotation.x = -1.6 - Math.sin((r.punchT / 0.25) * Math.PI) * 0.8; }
+    if (t.fm && t.fm !== r.fm) { const first = r.fm == null; r.fm = t.fm; if (!first) { r.fight = { mv: MOVES[t.fm % 4], t: 0 }; r.punchT = 0; } }
+    if (r.fight) { r.fight.t += dt; if (r.fight.t >= r.fight.mv.dur) { r.fight = null; fightEnd(r.ch); } else fightPose(r.ch, r.fight); }
+    else if (r.punchT > 0) { r.punchT -= dt; r.ch.shR.rotation.x = -1.6 - Math.sin((r.punchT / 0.25) * Math.PI) * 0.8; }
     const lv = voiceLevel(r.id); r.mic.visible = !!r.voice; r.mic.scale.setScalar(0.5 + Math.min(0.5, lv * 4));
     // suara teman makin pelan bila jauh (seperti di game)
     setPeerVolume(r.id, clamp(1.15 - Math.hypot(player.pos.x - root.position.x, player.pos.z - root.position.z) / 35, 0.12, 1));
@@ -3156,8 +3253,7 @@ function enterGame(name, data) {
   save = merge(structuredClone(DEFAULT), data || {}); save.name = name;
   if (save.time.date !== todayStr()) save.time = { date: todayStr(), sec: 0, bonus: 0 };
   rememberProfile(name); persist(true);
-  applyAvatar(); updateStars(); refreshCrystals(); updateMission(); setCamMode(dev.cam || 'sedang'); updateVitals();
-  $('#worldBtn').hidden = !isAdult();
+  applyAvatar(); updateStars(); refreshCrystals(); updateMission(); setCamMode(dev.cam || 'sedang'); updateVitals(); buildEmotes();
   for (const z of Object.values(zones)) { z.drawTop(); z.refresh?.(); }
   applyGraphics();
   $('#login').hidden = true; $('#start').hidden = false; $('#hello').textContent = `Halo, ${name}!`;
@@ -3181,7 +3277,7 @@ function onNet(m) {
     case 'kicked': $('#kicked').hidden = false; modal = 'kicked'; stopNet(); break;
     case 'join': addRemote(m.p); if (playing) toast(`${m.p.name} datang! 👋`); break;
     case 'leave': { veh.pass.delete(m.id); const r = remotes.get(m.id); if (r && playing) toast(`${r.name} pulang`); removeRemote(m.id); break; }
-    case 'move': { const r = remotes.get(m.id); if (r) r.target = m; break; }
+    case 'move': { const r = remotes.get(m.id); if (r) { r.target = m; r.tkAt = performance.now(); } break; }
     case 'pinfo': { const r = remotes.get(m.id); if (r) { r.avatar = m.avatar; applyAvatarTo(r.ch, m.avatar); } break; }
     case 'pzone': { const r = remotes.get(m.id); if (r) r.zone = m.zone; break; }
     case 'emote': { const r = remotes.get(m.id); if (r) startEmote(r.ch, r, m.e); break; }
@@ -3196,7 +3292,7 @@ function onNet(m) {
     case 'rideOff': if (veh.pass.delete(m.from)) { const r = remotes.get(m.from); toast(`${r ? r.name : 'Teman'} sudah turun`); } break;
     case 'rideEnd': if (ride && ride.driver === m.from) leaveRide(false); break;
     case 'summit': { const r = remotes.get(m.id); const nm = r?.name || m.name; if (nm) { toast(`🏆 ${nm} sampai di puncak Menara Langit!`); if (r) startEmote(r.ch, r, '🎉'); } break; }
-    case 'greet': { const r = remotes.get(m.from); if (r) { say(`${r.name} menyapamu! 👋 Sapa balik, yuk. Ketuk ${r.name}.`, { force: true }); startEmote(r.ch, r, '👋'); } break; }
+    case 'greet': { const r = remotes.get(m.from); if (r) { toast(`👋 ${r.name} menyapamu!`); startEmote(r.ch, r, '👋'); } break; }
     case 'voice': { const r = remotes.get(m.id); if (r) r.voice = m.on; break; }
     case 'rtc': onRtc(m.from, m.data, remotes.get(m.from)?.secure ?? true); break;
     case 'top': tops[m.zone] = m.top; zones[m.zone]?.drawTop(); updateMission(); break;
@@ -3207,14 +3303,16 @@ function onNet(m) {
     case 'zhost': zHostId = m.id; if (!amZHost()) zPending = 0; break;
     case 'zstate': onZState(m); break;
     case 'zdead': onZDead(m); break;
-    case 'zhit': if (amZHost()) applyHit(m.id, m.dmg, m.by); break;
+    case 'zhit': if (amZHost()) applyHit(m.id, m.dmg, m.by, m.pw || 1); break;
+    case 'zspit': case 'zslam': case 'zfx': onZEvent(m); break;
     case 'zhurt': hurtMe(zombies.get(m.zid) || { x: player.pos.x + 1, z: player.pos.z }); break;
-    case 'zspawn': if (amZHost()) zPending += m.n; break;
+    case 'zspawn': if (amZHost() && worldSt.phase === 'night') zPending += m.n; break;
     case 'shot': spawnShot(m.x + m.dx * 0.8, m.z + m.dz * 0.8, m.dx, m.dz, m.c || '#ffffff', false, null, m.tg ?? null); break;
     case 'notice': toast(m.msg); break;
     case 'pdown': { const r = remotes.get(m.id); if (r) { r.down = m.down; r.ch.root.visible = !m.down; if (spec.on) renderSpect(); if (m.down && playing) toast(`${r.name} kehabisan nyawa 👻`); } break; }
     case 'psettings': Object.assign(save.settings, m.settings || {}); persist(); toast('Pengaturan dari orang tua diperbarui'); break;
     case 'family': renderFamily(m); break;
+    case 'gift': getGift(+m.n || 0); break;
     case 'room': zones[m.zone]?.onRoom(m); break;
     case 'round': { const z = zones[m.zone]; if (!z || !z.active) break; if (!z.arrived) z.pending = m; else z.playRound(m); break; }
     case 'style': zones[m.zone]?.onStyle(m); break;
@@ -3246,14 +3344,16 @@ let lastPhase = 'day';
 function onWorld(m) {
   worldSt.offset = m.now - Date.now();
   const oldSafe = (worldSt.safe || []).join();
-  Object.assign(worldSt, { phase: m.phase, start: m.start, ends: m.ends, safe: m.safe, safeEnds: m.safeEnds, rest: m.rest });
+  const wasHold = worldSt.hold;
+  Object.assign(worldSt, { phase: m.phase, start: m.start, ends: m.ends, safe: m.safe, safeEnds: m.safeEnds, rest: m.rest, hold: !!m.hold });
+  if (worldSt.hold && !wasHold && playing) { showBanner('👑 Kalahkan Raja Zombie dulu, baru pagi datang!', 'boss'); say('Raja Zombie masih ada! Ayo kalahkan dia bersama-sama, supaya pagi datang!', { force: true }); }
   Object.assign(wcfg, m.cfg || {}); Object.assign(family, m.cfg || {});
   phaseChanged();
   if ((m.safe || []).join() !== oldSafe) safeChanged();
 }
 function setPhaseLocal(phase) {
   const mins = phase === 'night' ? wcfg.nightMin : wcfg.dayMin;
-  Object.assign(worldSt, { phase, start: wnow(), ends: wnow() + mins * 60000, rest: 0, safe: null, safeEnds: 0 });
+  Object.assign(worldSt, { phase, start: wnow(), ends: wnow() + mins * 60000, rest: 0, safe: null, safeEnds: 0, hold: false });
   if (phase === 'night') rotateSafeLocal();
   phaseChanged(); safeChanged();
 }
@@ -3272,7 +3372,7 @@ function safeChanged() {
   const names = (worldSt.safe || []).map((id) => zones[id]?.name).filter(Boolean);
   if (activeZone && !isSafeZone(activeZone)) {
     kickT = 8;
-    say(`Awas! ${activeZone.name} tidak aman lagi. Delapan detik lagi kita keluar. Lari ke zona hijau: ${names.join(', ')}!`, { force: true, stay: true });
+    say(`Awas, di sini tidak aman lagi! Lari ke zona hijau: ${names.join(', ')}!`, { force: true, stay: true });
   } else if (!activeZone && !me.down) toast(`🛡️ Zona aman sekarang: ${names.join(', ')}`);
 }
 function phaseChanged() {
@@ -3282,12 +3382,13 @@ function phaseChanged() {
   if (worldSt.phase === 'night') {
     tone(330, 0.6, { type: 'triangle', vol: 0.08 }); tone(247, 0.9, { type: 'triangle', vol: 0.08, delay: 0.3 });
     if ((save.hp ?? 3) <= 0) setTimeout(goDown, 1500);
-    say(wcfg.zombies ? 'Malam tiba! Lampu-lampu menyala. Hati-hati, zombie keluar dari air mancur! Tempat bermain aman untuk berlindung.' : 'Malam tiba! Lihat, lampu-lampu menyala dan ada bintang di langit.', { force: true });
+    say(wcfg.zombies ? 'Malam tiba! Awas, zombie datang! Siapkan senjata, atau sembunyi di zona hijau!' : 'Malam tiba! Lihat, banyak bintang di langit!', { force: true });
   } else {
     tone(523, 0.3, { type: 'triangle', vol: 0.1 }); tone(784, 0.4, { type: 'triangle', vol: 0.1, delay: 0.15 });
-    say((save.hp ?? 3) <= 0 ? 'Pagi tiba! Zombie hilang. Nyawamu habis, tapi tenang: belajar di satu tempat bermain, nanti Kak Rara kasih satu nyawa!' : 'Pagi tiba! Matahari bersinar, zombie-zombie hilang.', { force: true });
+    say((save.hp ?? 3) <= 0 ? 'Pagi tiba! Main satu permainan, nanti dapat nyawa lagi!' : 'Yeay, pagi tiba! Zombienya hilang semua!', { force: true });
     if (amZHost()) for (const z of [...zombies.values()]) killZombie(z.id, null, true);
     if (me.down) stopSpectate();
+    nightSummary();
   }
 }
 // 0 = siang penuh, 1 = malam penuh (berganti pelan selama 15 detik)
@@ -3300,7 +3401,9 @@ let warnedFor = 0, chipT = 0;
 function worldTick(dt) {
   // tanpa server: jam, giliran zona aman, dan istirahat berjalan di perangkat ini
   if (!net.online) {
-    if (wcfg.cycle && wnow() >= worldSt.ends) setPhaseLocal(worldSt.phase === 'day' ? 'night' : 'day');
+    const bossOn = worldSt.phase === 'night' && !me.down && [...zombies.values()].some((z) => z.kind === 5 && W.islandOf(z.x, z.z) === W.islandOf(player.pos.x, player.pos.z)); // tanpa server: aturan Raja sama
+    if (wcfg.cycle && wnow() >= worldSt.ends && bossOn && wnow() - worldSt.ends < 300000) { if (!worldSt.hold) { worldSt.hold = true; showBanner('👑 Kalahkan Raja Zombie dulu, baru pagi datang!', 'boss'); } }
+    else if (wcfg.cycle && wnow() >= worldSt.ends) setPhaseLocal(worldSt.phase === 'day' ? 'night' : 'day');
     else if (worldSt.phase === 'night') {
       if (wnow() >= worldSt.safeEnds) { rotateSafeLocal(); safeChanged(); }
       if (me.down && !worldSt.rest) worldSt.rest = wnow() + (wcfg.restSec || 30) * 1000;
@@ -3313,7 +3416,7 @@ function worldTick(dt) {
   if (playing && worldSt.phase === 'day' && wcfg.cycle && wcfg.zombies !== false && left <= 60000 && left > 0 && warnedFor !== worldSt.start) {
     warnedFor = worldSt.start;
     [0, 0.45, 0.9].forEach((d) => { tone(880, 0.3, { type: 'square', vol: 0.05, delay: d }); tone(660, 0.3, { type: 'square', vol: 0.05, delay: d + 0.22 }); });
-    say((save.hp ?? 3) <= 0 ? 'Satu menit lagi malam tiba! Nyawamu masih habis. Cepat belajar di satu tempat bermain supaya dapat satu nyawa!' : 'Satu menit lagi malam tiba! Siapkan nyawa dan senjata di toko. Nanti cari zona aman yang bersinar hijau, ya!', { force: true });
+    say((save.hp ?? 3) <= 0 ? 'Sebentar lagi malam! Ayo main satu permainan dulu supaya dapat nyawa!' : 'Sebentar lagi malam! Siapkan senjatamu, ya!', { force: true });
     toast('🌙 Satu menit lagi malam!');
   }
   // keluar otomatis bila tempat bermain berubah tidak aman
@@ -3327,7 +3430,11 @@ function updatePhaseChip() {
   const left = worldSt.ends - wnow();
   if (worldSt.phase === 'day' && wcfg.cycle && wcfg.zombies !== false && left <= 60000) txt = `🌙 Malam dalam ${mmss(left)}`;
   else if (nightDanger() && worldSt.rest) txt = `😴 Semua kehabisan nyawa · istirahat ${mmss(worldSt.rest - wnow())}, lalu pagi`;
-  else if (nightDanger()) txt = `🛡️ Zona aman berganti ${mmss(worldSt.safeEnds - wnow())}`;
+  else if (nightDanger() && worldSt.hold) txt = [...zombies.values()].some((z) => z.kind === 5 && W.islandOf(z.x, z.z) === W.islandOf(player.pos.x, player.pos.z)) ? '👑 Kalahkan Raja Zombie supaya pagi datang!' : '👑 Teman sedang melawan Raja Zombie di pulau lain…';
+  else if (nightDanger()) {
+    const wv = waveInfo(), wtxt = !wv ? '' : wv.n === 0 ? `🧟 datang ${Math.ceil(wv.left)} dtk · ` : `🧟 ${wv.n}/${wv.total} ${wv.active ? '⚔️' : `☕ ${Math.ceil(wv.left)} dtk`} · `;
+    txt = wtxt + (W.islandOf(player.pos.x, player.pos.z) === 'kota' ? '🛡️ Taman, Alun-alun, Tugu' : `🛡️ berganti ${mmss(worldSt.safeEnds - wnow())}`);
+  }
   el.hidden = !txt || !playing; el.textContent = txt; el.classList.toggle('warn', txt.startsWith('🌙'));
   // papan skor tiap tempat: AMAN + hitung mundur / TIDAK AMAN
   for (const z of Object.values(zones)) {
@@ -3352,7 +3459,7 @@ const SUN_DAY = C('#fff3d6'), SUN_NIGHT = C('#9fb4ff'), WATER_DAY = C('#4cb4ea')
 const BULB_OFF = C('#6b6b6b'), BULB_ON = C('#fff3b0');
 let starPts = null, glowPts = null, poolMesh = null, portal = null, lastN = -1;
 function applyLighting() {
-  const n = nightFactor(); if (Math.abs(n - lastN) < 0.002) return; lastN = n;
+  const n = nightFactor(); KOTA.setCityNight(n, nightDanger()); if (Math.abs(n - lastN) < 0.002) return; lastN = n;
   scene.background.copy(SKY_DAY).lerp(SKY_NIGHT, n); scene.fog.color.copy(scene.background);
   hemi.intensity = 1.35 - n * 0.95; hemi.color.copy(HEMI_DAY).lerp(HEMI_NIGHT, n); hemi.groundColor.copy(GROUND_DAY).lerp(GROUND_NIGHT, n);
   sun.intensity = 1.7 - n * 1.35; sun.color.copy(SUN_DAY).lerp(SUN_NIGHT, n);
@@ -3375,6 +3482,7 @@ function buildLamps() {
   for (let i = 0; i < 18; i++) { const a = (i / 18) * Math.PI * 2 + 0.26; spots.push([Math.cos(a) * (RING + 1.6), Math.sin(a) * (RING + 1.6)]); }
   for (let i = 0; i < 26; i++) { const a = (i / 26) * Math.PI * 2; spots.push([Math.cos(a) * (RING2 + 1.6), Math.sin(a) * (RING2 + 1.6)]); }
   const ok = spots.filter(([x, z], i) => i < ZONE_IDS.length * 2 || !Object.values(ZONES_POS).some(([zx, zz]) => Math.hypot(x - zx, z - zz) < 8.5));
+  ok.push(...KOTA.lamps); // lampu jalan Pulau Kota ikut menyala saat malam
   const glow = [];
   for (const [x, z] of ok) {
     box(0.22, 3.0, 0.22, '#2c2f3a', x, 1.5, z, scene); box(0.6, 0.12, 0.6, '#2c2f3a', x, 3.05, z, scene);
@@ -3411,13 +3519,22 @@ function buildFountain() {
 }
 
 /* =========================================================
-   ZOMBIE (gaya kartun: kalah = pecah jadi bintang)
+   ZOMBIE MALAM (gaya kartun, ramah anak: tidak ada darah, kalah = jatuh lalu pecah jadi bintang)
+   - Malam dibagi GELOMBANG, dihitung dari jam dunia (sama di semua perangkat); jeda istirahat di antaranya;
+     gelombang terakhir didatangi Raja Zombie (bos)
+   - 6 jenis zombie dengan perilaku berbeda; tiap serangan diawali ancang-ancang supaya anak sempat menghindar
+   - Kalah = terpental & jatuh, pecah jadi bintang, koin terbang ke pemain; combo, Bintang Super, ringkasan pagi
+   - Satu perangkat (tuan rumah zombie) menjalankan otak zombie dan menyiarkan posisinya
    ========================================================= */
 const ZK = [
-  { id: 'biasa', hp: 6, speed: 2.3, scale: 1 },
-  { id: 'cepat', hp: 4, speed: 3.6, scale: 0.82 },
-  { id: 'besar', hp: 14, speed: 1.6, scale: 1.35 },
+  { id: 'biasa', name: 'Zombie', hp: 6, speed: 2.2, scale: 1, shirt: '#4f7a43', pants: '#4a3b6b', skin: '#9bd77a', reach: 1.35, coin: 1, voice: 120 },
+  { id: 'cepat', name: 'Zombie Lari', hp: 4, speed: 3.6, scale: 0.82, shirt: '#ff8a2a', pants: '#5b3b22', skin: '#b5e08f', reach: 1.25, zig: true, coin: 1, voice: 170 },
+  { id: 'besar', name: 'Zombie Raksasa', hp: 16, speed: 1.55, scale: 1.4, shirt: '#7a4fb3', pants: '#2c2f3a', skin: '#8fcf6e', reach: 1.9, heavy: true, coin: 3, voice: 80 },
+  { id: 'lompat', name: 'Zombie Pelompat', hp: 5, speed: 2.5, scale: 0.9, shirt: '#3a7cf5', pants: '#1d2b53', skin: '#a9e3a0', reach: 1.3, leap: true, coin: 2, voice: 150 },
+  { id: 'lendir', name: 'Zombie Lendir', hp: 6, speed: 2.0, scale: 1, shirt: '#ffd23a', pants: '#4a3b6b', skin: '#c6e86a', reach: 1.35, spit: true, coin: 2, voice: 130 },
+  { id: 'raja', name: 'Raja Zombie', hp: 90, speed: 1.45, scale: 2.1, shirt: '#b3263a', pants: '#2c2f3a', skin: '#7cc05a', reach: 2.7, boss: true, coin: 15, voice: 60 },
 ];
+const ZST = { walk: 0, wind: 1, leap: 2, spit: 3, stun: 4, roar: 5, slam: 6 };
 const zombies = new Map();
 let zHostId = null, zSeqId = 1, zSpawnT = 0, zSendT = 0, zPending = 0;
 const amZHost = () => !net.online || (net.id != null && zHostId === net.id);
@@ -3428,140 +3545,452 @@ function combatLevel() {
 }
 const DMG_MULT = [1, 3, 2, 1.5, 1]; // makin mudah, zombie makin cepat kalah
 const HURT_BY = [1, 0.5, 0.5, 1, 1]; // nyawa yang hilang per pukulan zombie
+
+/* ---------- gelombang ---------- */
+const WAVE_INTRO = 12, WAVE_BREAK = 12;
+function waveInfo() {
+  if (!nightDanger()) return null;
+  const L = Math.max(60, (worldSt.ends - worldSt.start) / 1000), t = (wnow() - worldSt.start) / 1000;
+  const total = clamp(Math.round(L / 75), 2, 6);
+  if (t < WAVE_INTRO) return { n: 0, total, active: false, left: WAVE_INTRO - t, boss: false, u: t, D: WAVE_INTRO };
+  const D = (L - WAVE_INTRO) / total, k = Math.min(total - 1, Math.floor((t - WAVE_INTRO) / D)), u = t - WAVE_INTRO - k * D, last = k === total - 1;
+  const active = last || u < D - WAVE_BREAK;
+  return { n: k + 1, total, active, left: Math.max(0, (active && !last ? D - WAVE_BREAK : D) - u), boss: last, u, D };
+}
+const waveKinds = (n, boss) => [0, 0, 0, 1, ...(n >= 2 ? [3, 1] : []), ...(n >= 3 ? [4, 2] : []), ...(boss ? [2, 3, 4] : [])];
+// heat: tingkat kekuatan adaptif (0-3). Naik tiap kali pemain menghabisi semua zombie sebelum gelombang habis:
+// zombie langsung menyerbu lagi, lebih cepat, lebih tahan, lebih banyak, jenisnya lebih berat. Kembali 0 tiap malam.
+const zHost = { wave: -1, quota: 0, spawned: 0, boss: false, heat: 0, clearT: 0, rushes: 0 };
+const heatKinds = (h) => [...(h >= 1 ? [1, 3, 4] : []), ...(h >= 2 ? [2, 3, 4, 1] : []), ...(h >= 3 ? [2, 2] : [])];
+
+/* ---------- membuat & memunculkan zombie ---------- */
+const RISE_GEO = new THREE.RingGeometry(0.45, 1.0, 24).rotateX(-Math.PI / 2);
 function makeZombie(id, kindIdx, x, z) {
   const k = ZK[kindIdx] || ZK[0];
-  const ch = makeCharacter({ shirt: '#4f7a43', pants: '#4a3b6b', skin: '#9bd77a', hair: '#3e5a2a', zombie: true });
-  ch.root.scale.setScalar(k.scale); ch.shL.rotation.x = -1.45; ch.shR.rotation.x = -1.35;
+  const ch = makeCharacter({ shirt: k.shirt, pants: k.pants, skin: k.skin, hair: '#3e5a2a', zombie: true });
+  ch.root.scale.setScalar(k.scale); ch.root.rotation.order = 'YXZ'; ch.shL.rotation.x = -1.45; ch.shR.rotation.x = -1.35;
+  if (k.boss) ch.hatSlot.add(makeHat('emas'));
   const bar = new THREE.Group(); bar.position.y = 3.25; ch.root.add(bar);
   const bg = new THREE.Mesh(BOX, mat('#1d2b53')); bg.scale.set(1.1, 0.14, 0.05); bar.add(bg);
   const fg = new THREE.Mesh(BOX, mat('#ff5a5f')); fg.scale.set(1.04, 0.1, 0.06); fg.position.z = 0.01; bar.add(fg);
+  const alert = emojiSprite('❗', 0.9 / k.scale); alert.position.y = 3.9; alert.visible = false; ch.root.add(alert);
   ch.root.traverse((o) => { if (o.isMesh) o.castShadow = false; }); // hemat untuk tablet
-  ch.root.position.set(x, -2.4, z); scene.add(ch.root);
-  const zz = { id, kind: kindIdx, x, z, tx: x, tz: z, f: 0, hp: k.hp, max: k.hp, ch, bar, fg, phase: rand(0, 6), cd: 1, rise: 0, flash: 0, speed: k.speed };
+  ch.root.position.set(x, -2.6, z); scene.add(ch.root);
+  const mark = new THREE.Mesh(RISE_GEO, new THREE.MeshBasicMaterial({ color: k.boss ? '#ff3b30' : '#b36bf2', transparent: true, opacity: 0.9, depthWrite: false }));
+  mark.position.set(x, 0.07, z); mark.scale.setScalar(k.scale); scene.add(mark);
+  const hp = k.boss ? Math.round(k.hp * (1 + Math.min(3, remotes.size) * 0.5)) : k.hp;
+  const zz = { id, kind: kindIdx, x, z, tx: x, tz: z, f: rand(0, 6), hp, max: hp, ch, bar, fg, alert, mark, phase: rand(0, 6), cd: 1, rise: -0.8, flash: 0, speed: k.speed * rand(0.92, 1.08),
+    st: 0, stT: 0, y: 0, ty: 0, kx: 0, kz: 0, flank: rand(-1, 1), leapCd: rand(0.6, 1.6), spitCd: rand(2, 4), slamCd: 6, sumCd: 12, seen: false, groanT: rand(2, 7), lastSt: 0, stAge: 0 };
   zombies.set(id, zz); return zz;
 }
-function spawnZombie() {
-  const night = nightProgress();
-  const r = Math.random(); const kind = night > 0.55 && r < 0.18 ? 2 : night > 0.25 && r < 0.45 ? 1 : 0;
-  const a = rand(0, Math.PI * 2);
-  makeZombie(`${net.id || 0}-${zSeqId++}`, kind, Math.cos(a) * 3.7, Math.sin(a) * 3.7);
-  tone(140, 0.5, { type: 'sawtooth', slide: 0.7, vol: 0.03 });
+// muncul di sekitar pemain (14–22 m, di daratan kosong, bukan zona aman) atau dari air mancur / gorong-gorong
+// pemain yang sedang aktif (tidak jeda, tidak kalah): dasar pembagian zombie antarpulau
+function zActive() {
+  const ps = [];
+  if (playing && !me.down && !me.paused) ps.push(player.pos);
+  for (const r of remotes.values()) if (!r.down && r.target?.p !== P_PAUSE) ps.push(r.ch.root.position);
+  return ps;
 }
-const inSafe = (x, z) => Object.values(zones).some((q) => isSafeZone(q) && Math.hypot(x - q.cx, z - q.cz) < 6.6);
+// pulau dengan pemain aktif terbanyak (untuk Raja Zombie)
+function busiestIsland(ps) { const n = {}; for (const p of ps) { const k = W.islandOf(p.x, p.z); n[k] = (n[k] || 0) + 1; } return Object.entries(n).sort((a, b) => b[1] - a[1])[0]?.[0] || null; }
+function spawnZombie(kind = 0, at = null) {
+  // zombie dibagi sebanding jumlah pemain aktif di tiap pulau: pilih satu pemain aktif secara acak, muncul di dekatnya
+  let ps = zActive(); if (!ps.length) ps = [...(playing && !me.down ? [player.pos] : []), ...[...remotes.values()].filter((r) => !r.down).map((r) => r.ch.root.position)];
+  if (kind === 5 && ps.length) { const isl = busiestIsland(ps); ps = ps.filter((p) => W.islandOf(p.x, p.z) === isl); } // Raja di pulau paling ramai
+  const who = ps.length ? pick(ps) : null, kota = who && W.islandOf(who.x, who.z) === 'kota';
+  let x = at?.[0], z = at?.[1];
+  if (x == null && who && (kind === 5 || Math.random() < 0.7)) { // 30% tetap keluar dari air mancur / gorong-gorong terdekat
+    const r0 = kind === 5 ? 18 : 12, r1 = kind === 5 ? 26 : 22;
+    for (let i = 0; i < 40; i++) { // kota padat bangunan: lebih banyak percobaan
+      const a = rand(0, Math.PI * 2), r = rand(r0, r1), px = who.x + Math.cos(a) * r, pz = who.z + Math.sin(a) * r;
+      if (W.islandOf(px, pz) !== W.islandOf(who.x, who.z) || !W.onLand(px, pz, 3) || W.hitsSolid(px, pz, kind === 5 ? 1.2 : 0.6, kind === 5 ? 1.2 : 0.6, 0.3) || inSafe(px, pz) || colliders.some((c) => Math.hypot(c.x - px, c.z - pz) < c.r + 0.8)) continue;
+      x = px; z = pz; break;
+    }
+  }
+  if (x == null) {
+    const a = rand(0, Math.PI * 2);
+    if (kota) { // gorong-gorong terdekat dengan pemain (tidak terlalu dekat), bukan yang acak di ujung pulau
+      const near = KOTA.ZSPAWN.map(([sx, sz]) => [sx, sz, Math.hypot(sx - who.x, sz - who.z)]).filter((q) => q[2] > 8).sort((p, q) => p[2] - q[2]);
+      const [sx, sz] = near.length ? pick(near.slice(0, 2)) : pick(KOTA.ZSPAWN); x = sx + Math.cos(a) * 1.5; z = sz + Math.sin(a) * 1.5;
+    } else { x = Math.cos(a) * 3.7; z = Math.sin(a) * 3.7; }
+  }
+  const zz = makeZombie(`${net.id || 0}-${zSeqId++}`, kind, x, z), h = zHost.heat;
+  if (h > 0) { zz.hp = zz.max = Math.round(zz.hp * (1 + 0.35 * h)); zz.speed *= 1 + 0.12 * h; zz.leapCd *= 0.7; zz.spitCd *= 0.7; }
+}
+const inSafe = (x, z) => (nightDanger() && KOTA.inCitySafe(x, z)) || Object.values(zones).some((q) => isSafeZone(q) && Math.hypot(x - q.cx, z - q.cz) < 6.6);
 function zTargets() {
   const t = [];
   if (worldSt.rest) return t; // istirahat: zombie hanya berkeliaran
-  if (playing && !me.down && player.y < 1.2 && !(activeZone && isSafeZone(activeZone)) && !inSafe(player.pos.x, player.pos.z)) t.push({ id: net.id, x: player.pos.x, z: player.pos.z, me: true });
-  for (const r of remotes.values()) { const p = r.ch.root.position; const rz = r.zone && zones[r.zone]; if (!r.down && p.y < 1.2 && !(rz && isSafeZone(rz)) && !inSafe(p.x, p.z)) t.push({ id: r.id, x: p.x, z: p.z }); }
+  if (playing && !me.down && !me.paused && player.y < 1.2 && !(activeZone && isSafeZone(activeZone)) && !inSafe(player.pos.x, player.pos.z)) t.push({ id: net.id, x: player.pos.x, z: player.pos.z, me: true });
+  for (const r of remotes.values()) { const p = r.ch.root.position; const rz = r.zone && zones[r.zone]; if (!r.down && r.target?.p !== P_PAUSE && p.y < 1.2 && !(rz && isSafeZone(rz)) && !inSafe(p.x, p.z)) t.push({ id: r.id, x: p.x, z: p.z }); }
   return t;
 }
+function zHurtTarget(t, z, push) { if (t.me) hurtMe(z, push); else send({ t: 'zhurt', to: t.id, zid: z.id }); }
+// gaya hidup bersama (tuan rumah juga memanggil ini untuk dirinya sendiri)
+function zBroadcast(m) { if (net.online) send(m); onZEvent(m); }
+
+/* ---------- otak zombie (hanya tuan rumah) ---------- */
 function zombieHostTick(dt) {
-  // muncul makin sering menjelang akhir malam
-  if (worldSt.phase === 'night' && wcfg.zombies && playing && !worldSt.rest) {
-    const p = nightProgress(); const n = 1 + Math.max(0, remotes.size) * 0.4;
-    const cap = Math.min(dev.lite ? 12 : 24, Math.round((4 + 14 * p) * Math.min(n, 2)));
-    zSpawnT += dt * (0.12 + 0.55 * p) * n;
-    if (zSpawnT >= 1) { zSpawnT = 0; if (zombies.size < cap) spawnZombie(); }
+  const wv = waveInfo();
+  if (wv && wcfg.zombies && playing && !worldSt.rest) {
+    if (wv.n !== zHost.wave) { if (wv.n === 0) Object.assign(zHost, { heat: 0, rushes: 0 }); zHost.wave = wv.n; zHost.spawned = 0; zHost.boss = false; zHost.clearT = 0; zHost.quota = wv.n ? Math.round((5 + wv.n * 4) * (1 + Math.min(3, remotes.size) * 0.5) * (1 + 0.4 * zHost.heat)) : 0; }
+    if (wv.active && wv.n) {
+      const h = zHost.heat, cap = Math.min(dev.lite ? 14 : 26, 6 + wv.n * 3 + remotes.size * 2 + Math.round(h * 4));
+      const want = zHost.quota * clamp(wv.u * (1 + 0.3 * h) / Math.max(10, (wv.boss ? wv.D : wv.D - WAVE_BREAK) * 0.6), 0, 1);
+      zSpawnT += dt;
+      if (zHost.spawned < want && zSpawnT > 0.7 / (1 + 0.5 * h) && zombies.size < cap) { zSpawnT = 0; zHost.spawned++; spawnZombie(pick([...waveKinds(wv.n, wv.boss), ...heatKinds(h)])); }
+      // pemain menghabisi semua zombie lebih cepat dari jadwal → serbuan baru & zombie makin kuat
+      if (zombies.size === 0 && zPending === 0 && zHost.spawned >= Math.floor(want) && wv.left > 8 && zTargets().length) {
+        if ((zHost.clearT += dt) > 1.5) {
+          zHost.clearT = 0; zHost.rushes++; zHost.heat = Math.min(3, zHost.heat + 0.5);
+          const n = 3 + Math.round(zHost.heat * 2) + Math.min(3, remotes.size); zPending += n; zHost.quota += n;
+          zBroadcast({ t: 'zfx', k: 'heat', lv: Math.round(zHost.heat * 2), x: 0, z: 0 });
+        }
+      } else zHost.clearT = 0;
+      if (wv.boss && !zHost.boss && wv.u > 3) { zHost.boss = true; spawnZombie(5); }
+    }
   }
-  if (zPending > 0) { zSpawnT2 += dt; if (zSpawnT2 > 0.35) { zSpawnT2 = 0; zPending--; spawnZombie(); } }
+  if (worldSt.phase !== 'night') zPending = 0; // sisa antrean zombie hilang saat pagi
+  if (zPending > 0 && zombies.size < (dev.lite ? 25 : 40)) { zSpawnT2 += dt; if (zSpawnT2 > 0.35) { zSpawnT2 = 0; zPending--; spawnZombie(pick([0, 0, 1, 3, 4, 2, ...heatKinds(zHost.heat)])); } }
   const targets = zTargets();
-  for (const z of zombies.values()) {
-    if (z.rise < 1) { z.rise = Math.min(1, z.rise + dt / 1.3); continue; }
-    z.cd -= dt;
-    let best = null, bd = 1e9; // peta luas: zombie mencari pemain terdekat di mana pun
-    for (const t of targets) { const d = Math.hypot(t.x - z.x, t.z - z.z); if (d < bd) { bd = d; best = t; } }
-    let gx, gz;
-    if (best) { gx = best.x; gz = best.z; z.wx = null; }
-    else {
-      // semua pemain di zona aman: zombie tetap berkeliaran di sekitar tempatnya, tidak kembali ke air mancur
-      if (z.wx == null || Math.hypot(z.wx - z.x, z.wz - z.z) < 1.2 || (z.wt = (z.wt || 0) - dt) <= 0) {
-        const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 10; let wx = z.x + Math.cos(a) * r, wz = z.z + Math.sin(a) * r;
-        const d = Math.hypot(wx, wz), lim = edgeR(wx, wz) - 4; if (d > lim) { wx *= lim / d; wz *= lim / d; }
-        z.wx = wx; z.wz = wz; z.wt = 5 + Math.random() * 4;
+  for (const z of [...zombies.values()]) {
+    const k = ZK[z.kind];
+    if (z.rise < 1) { z.rise = Math.min(1, z.rise + dt / (z.rise < 0 ? 1.0 : 1.3)); continue; }
+    z.cd -= dt; z.leapCd -= dt; z.spitCd -= dt; z.slamCd -= dt; z.sumCd -= dt;
+    if (z.kx || z.kz) { z.x += z.kx * dt; z.z += z.kz * dt; const dec = Math.exp(-dt * 7); z.kx *= dec; z.kz *= dec; if (Math.abs(z.kx) + Math.abs(z.kz) < 0.05) z.kx = z.kz = 0; }
+    let best = null, bd = 1e9; // zombie mencari pemain terdekat di pulau yang sama
+    const zi = W.islandOf(z.x, z.z);
+    for (const t of targets) { if (W.islandOf(t.x, t.z) !== zi) continue; const d = Math.hypot(t.x - z.x, t.z - z.z); if (d < bd) { bd = d; best = t; } }
+    if (best && bd > (k.boss ? 90 : 38)) best = null;
+    if (best && !z.seen) { z.seen = true; z.st = ZST.roar; z.stT = 0.6; z.f = Math.atan2(best.x - z.x, best.z - z.z); }
+    if (!best) z.seen = false;
+    if (z.stT > 0) {
+      z.stT -= dt;
+      if (z.st === ZST.leap) { const p = clamp(1 - z.stT / z.leapDur, 0, 1); z.x = z.lx0 + (z.lx1 - z.lx0) * p; z.z = z.lz0 + (z.lz1 - z.lz0) * p; z.y = Math.sin(Math.PI * p) * 2.6; }
+      if (z.stT <= 0) {
+        const st = z.st; z.st = ZST.walk; z.y = 0;
+        if (st === ZST.wind && z.after === 'leap' && best) { z.st = ZST.leap; z.leapDur = 0.75; z.stT = 0.75; z.lx0 = z.x; z.lz0 = z.z; const d = Math.max(0.01, bd); z.lx1 = best.x - ((best.x - z.x) / d) * 0.6; z.lz1 = best.z - ((best.z - z.z) / d) * 0.6; z.leapCd = 4.5; }
+        else if (st === ZST.wind) { z.cd = k.heavy || k.boss ? 2 : 1.4; z.attackT = 0.35; if (best && bd < k.reach + 0.7) zHurtTarget(best, z, k.heavy || k.boss ? 2.4 : 1.4); }
+        else if (st === ZST.leap) { z.cd = 0.8; zBroadcast({ t: 'zfx', k: 'land', x: +z.x.toFixed(2), z: +z.z.toFixed(2) }); if (best && bd < 1.7) zHurtTarget(best, z, 1.8); }
+        else if (st === ZST.spit && best) zBroadcast({ t: 'zspit', x: +z.x.toFixed(2), z: +z.z.toFixed(2), tx: +(best.x + rand(-0.5, 0.5)).toFixed(2), tz: +(best.z + rand(-0.5, 0.5)).toFixed(2) });
+        else if (st === ZST.slam) zBroadcast({ t: 'zslam', x: +z.x.toFixed(2), z: +z.z.toFixed(2), r: 7 });
       }
-      gx = z.wx; gz = z.wz;
+    } else {
+      let gx, gz;
+      if (best) {
+        // mengepung: tiap zombie datang dari sisi yang sedikit berbeda; zombie lari berzig-zag; zombie lendir menjaga jarak
+        const ux = (best.x - z.x) / (bd || 1), uz = (best.z - z.z) / (bd || 1); let side = z.flank * Math.min(5, bd * 0.3);
+        if (k.zig) side += Math.sin(elapsed * 5 + z.phase) * Math.min(2.2, bd * 0.25);
+        gx = best.x - uz * side; gz = best.z + ux * side;
+        if (k.spit) { if (bd < 6) { gx = z.x - ux * 4; gz = z.z - uz * 4; } else if (bd < 11) { gx = z.x; gz = z.z; } }
+        const face = Math.atan2(best.x - z.x, best.z - z.z);
+        if (bd < k.reach + 0.2 && z.cd <= 0) { z.st = ZST.wind; z.after = 'hit'; z.stT = k.boss ? 0.85 : k.heavy ? 0.75 : 0.5; z.f = face; }
+        else if (k.leap && bd > 3.5 && bd < 9 && z.leapCd <= 0) { z.st = ZST.wind; z.after = 'leap'; z.stT = 0.55; z.f = face; }
+        else if (k.spit && bd >= 5 && bd < 13 && z.spitCd <= 0) { z.st = ZST.spit; z.stT = 0.7; z.spitCd = 3.4; z.f = face; }
+        else if (k.boss && bd < 9 && z.slamCd <= 0) { z.st = ZST.slam; z.stT = 1.2; z.slamCd = 7; z.f = face; }
+        if (k.boss && z.sumCd <= 0) { z.sumCd = 14; for (let i = 0; i < 2; i++) { const a = rand(0, Math.PI * 2); spawnZombie(pick([0, 1, 3]), [z.x + Math.cos(a) * 4, z.z + Math.sin(a) * 4]); } }
+      } else {
+        // tidak ada sasaran: berkeliaran di sekitar tempatnya (tidak kembali ke air mancur)
+        if (z.wx == null || Math.hypot(z.wx - z.x, z.wz - z.z) < 1.2 || (z.wt = (z.wt || 0) - dt) <= 0) {
+          const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 10; const q = { x: z.x + Math.cos(a) * r, z: z.z + Math.sin(a) * r };
+          if (W.islandOf(q.x, q.z) !== W.islandOf(z.x, z.z)) { q.x = z.x; q.z = z.z; } W.clampLand(q, 4);
+          z.wx = q.x; z.wz = q.z; z.wt = 5 + Math.random() * 4;
+        }
+        gx = z.wx; gz = z.wz;
+      }
+      if (z.st === ZST.walk) {
+        const dx = gx - z.x, dz = gz - z.z, d = Math.hypot(dx, dz);
+        if (d > 0.9) { const sp = z.speed * (best ? 1 : 0.55) * dt; z.x += (dx / d) * sp; z.z += (dz / d) * sp; }
+        if (best) z.f = Math.atan2(best.x - z.x, best.z - z.z); else if (d > 0.9) z.f = Math.atan2(dx, dz);
+      }
     }
-    const dx = gx - z.x, dz = gz - z.z, d = Math.hypot(dx, dz);
-    if (d > 0.9) { const st = z.speed * dt; z.x += (dx / d) * st; z.z += (dz / d) * st; z.f = Math.atan2(dx, dz); }
-    // jangan saling menumpuk, tidak masuk tempat bermain, tidak menembus pohon
-    for (const o of zombies.values()) { if (o === z) continue; const ox = z.x - o.x, oz = z.z - o.z, od = Math.hypot(ox, oz); if (od < 0.9 && od > 0.001) { z.x += (ox / od) * (0.9 - od) * 0.5; z.z += (oz / od) * (0.9 - od) * 0.5; } }
-    for (const q of Object.values(zones)) { if (!isSafeZone(q)) continue; const ox = z.x - q.cx, oz = z.z - q.cz, od = Math.hypot(ox, oz); if (od < 7.3) { z.x = q.cx + (ox / (od || 1)) * 7.3; z.z = q.cz + (oz / (od || 1)) * 7.3; } }
-    for (const c of colliders) { if (c.r > 4) continue; const ox = z.x - c.x, oz = z.z - c.z, od = Math.hypot(ox, oz), rr = c.r + 0.4; if (od < rr && od > 0.001) { z.x = c.x + (ox / od) * rr; z.z = c.z + (oz / od) * rr; } }
-    W.pushOut(z, 0, 0.4);
-    const pd = Math.hypot(z.x, z.z), lim = edgeR(z.x, z.z) - 2.2; if (pd > lim) { z.x *= lim / pd; z.z *= lim / pd; }
-    z.tx = z.x; z.tz = z.z;
-    if (best && bd < 1.2 * (ZK[z.kind].scale) + 0.2 && z.cd <= 0) {
-      z.cd = 1.5; z.attackT = 0.4;
-      if (best.me) hurtMe(z); else send({ t: 'zhurt', to: best.id, zid: z.id });
+    // jangan saling menumpuk, tidak masuk zona aman, tidak menembus pohon/gedung
+    if (z.st !== ZST.leap) {
+      for (const o of zombies.values()) { if (o === z) continue; const ox = z.x - o.x, oz = z.z - o.z, od = Math.hypot(ox, oz), rr = 0.45 * (k.scale + ZK[o.kind].scale); if (od < rr && od > 0.001) { z.x += (ox / od) * (rr - od) * 0.5; z.z += (oz / od) * (rr - od) * 0.5; } }
+      for (const q of Object.values(zones)) { if (!isSafeZone(q)) continue; const ox = z.x - q.cx, oz = z.z - q.cz, od = Math.hypot(ox, oz); if (od < 7.3) { z.x = q.cx + (ox / (od || 1)) * 7.3; z.z = q.cz + (oz / (od || 1)) * 7.3; } }
+      for (const q of KOTA.safeSpots) { const ox = z.x - q.x, oz = z.z - q.z, od = Math.hypot(ox, oz), rr = q.r + 0.7; if (od < rr) { z.x = q.x + (ox / (od || 1)) * rr; z.z = q.z + (oz / (od || 1)) * rr; } }
+      for (const c of colliders) { if (c.r > 4) continue; const ox = z.x - c.x, oz = z.z - c.z, od = Math.hypot(ox, oz), rr = c.r + 0.4; if (od < rr && od > 0.001) { z.x = c.x + (ox / od) * rr; z.z = c.z + (oz / od) * rr; } }
+      W.pushOut(z, 0, 0.4 * k.scale);
     }
+    W.clampLand(z, 2.2);
+    z.tx = z.x; z.tz = z.z; z.ty = z.y;
   }
   zSendT += dt;
-  if (net.online && zSendT > 0.12) { zSendT = 0; send({ t: 'zstate', list: [...zombies.values()].map((z) => [z.id, z.kind, +z.x.toFixed(2), +z.z.toFixed(2), +z.f.toFixed(2), +z.hp.toFixed(1), z.max, +z.rise.toFixed(2)]) }); }
+  if (net.online && zSendT > 0.12) { zSendT = 0; send({ t: 'zstate', list: [...zombies.values()].map((z) => [z.id, z.kind, +z.x.toFixed(2), +z.z.toFixed(2), +z.f.toFixed(2), +z.hp.toFixed(1), z.max, +z.rise.toFixed(2), z.st, +z.y.toFixed(2)]) }); }
 }
 let zSpawnT2 = 0;
 function onZState(m) {
-  if (amZHost()) return;
+  if (amZHost() || worldSt.phase !== 'night') return; // siang: data zombie yang terlambat tidak menghidupkan zombie lagi
   const seen = new Set();
-  for (const [id, kind, x, z, f, hp, max, rise] of m.list) {
+  for (const [id, kind, x, z, f, hp, max, rise, st = 0, y = 0] of m.list) {
     seen.add(id); const zz = zombies.get(id) || makeZombie(id, kind, x, z);
-    zz.tx = x; zz.tz = z; zz.f = f; zz.hp = hp; zz.max = max; zz.rise = rise;
+    zz.tx = x; zz.tz = z; zz.f = f; zz.hp = hp; zz.max = max; zz.rise = rise; zz.st = st; zz.ty = y;
   }
   for (const id of [...zombies.keys()]) if (!seen.has(id)) removeZombie(id);
 }
-function removeZombie(id) { const z = zombies.get(id); if (!z) return; scene.remove(z.ch.root); z.ch.m.face.map?.dispose(); zombies.delete(id); }
-function poof(x, z, big = true) {
-  burst(new THREE.Vector3(x, 1.5, z), ['#ffd23a', '#ffffff', '#9bd77a', '#ff8fc0']);
+function removeZombie(id) { const z = zombies.get(id); if (!z) return; disposeZombie(z); zombies.delete(id); }
+function disposeZombie(z) { scene.remove(z.ch.root); scene.remove(z.mark); z.mark.material.dispose(); if (z.ring) { scene.remove(z.ring); z.ring.material.dispose(); } z.ch.m.face.map?.dispose(); }
+function poof(x, z, big = true, y = 1.5) {
+  burst(new THREE.Vector3(x, y, z), ['#ffd23a', '#ffffff', '#9bd77a', '#ff8fc0']);
   if (big) { tone(660, 0.12, { type: 'triangle', vol: 0.1 }); tone(990, 0.18, { type: 'triangle', vol: 0.08, delay: 0.07 }); }
 }
+
+/* ---------- kalah: terpental, jatuh, pecah jadi bintang, koin terbang ---------- */
+const corpses = [], loot = [];
+function hashR(s, salt) { let h = 2166136261 ^ salt; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 1000) / 1000; }
+const dropsFor = (id, kind) => ({ coins: ZK[kind].coin, ammo: hashR(id, 1) < 0.3 ? 3 : 0, heart: ZK[kind].boss || hashR(id, 2) < 0.07 });
 function killZombie(id, by, sun = false) {
   const z = zombies.get(id); if (!z) return;
-  poof(z.x, z.z, !sun); removeZombie(id);
-  if (net.online) send({ t: 'zdead', id, by, sun });
-  if (by === net.id || (!net.online && by)) rewardKill();
+  if (net.online) send({ t: 'zdead', id, by, sun, k: z.kind });
+  dieFx(z, by, sun);
+  if (by === net.id || (!net.online && by)) rewardKill(z.kind, id);
+  if (ZK[z.kind].boss && !sun) bossDown();
 }
-function onZDead(m) { const z = zombies.get(m.id); if (z) { poof(z.ch.root.position.x, z.ch.root.position.z, !m.sun); removeZombie(m.id); } if (m.by === net.id) rewardKill(); }
-function rewardKill() { save.coins = (save.coins || 0) + 1; save.zkills = (save.zkills || 0) + 1; persist(); updateVitals(); floatText('+1 🪙'); }
-// pukulan/tembakan pemain ini (kerusakan sudah dihitung sesuai tingkat pemain)
-function hitZombie(id, dmg) {
-  const z = zombies.get(id); if (!z) return;
-  z.flash = 0.2; SFX.pop();
-  if (amZHost()) applyHit(id, dmg, net.id || 'me'); else send({ t: 'zhit', id, dmg });
+function onZDead(m) { const z = zombies.get(m.id); if (z) dieFx(z, m.by, m.sun); if (m.by === net.id) rewardKill(m.k ?? 0, m.id); if (m.k === 5 && !m.sun) bossDown(); }
+function dieFx(z, by, sun) {
+  zombies.delete(z.id); scene.remove(z.mark); z.bar.visible = false; z.alert.visible = false; if (z.ring) z.ring.visible = false;
+  const r = z.ch.root, kp = by === net.id || by === 'me' ? player.pos : remotes.get(by)?.ch.root.position;
+  let ax = 0, az = 0; if (kp) { const dx = r.position.x - kp.x, dz = r.position.z - kp.z, d = Math.hypot(dx, dz) || 1; ax = dx / d; az = dz / d; }
+  corpses.push({ z, t: 0, sun, ax, az, by, drops: sun ? null : dropsFor(z.id, z.kind), y0: r.position.y });
+  if (!sun) { tone(ZK[z.kind].voice * 1.6, 0.35, { type: 'sawtooth', slide: 0.5, vol: 0.04 }); if (Math.hypot(r.position.x - player.pos.x, r.position.z - player.pos.z) < 12) shakeCam(ZK[z.kind].boss ? 0.6 : 0.12); }
 }
-function applyHit(id, dmg, by) {
+const COIN_GEO = new THREE.CylinderGeometry(0.26, 0.26, 0.07, 14).rotateX(Math.PI / 2), COIN_MAT = new THREE.MeshLambertMaterial({ color: '#ffd23a', emissive: '#7a5a00' });
+function dropLoot(x, z, drops, by) {
+  const items = [];
+  for (let i = 0; i < Math.min(6, drops.coins); i++) items.push(new THREE.Mesh(COIN_GEO, COIN_MAT));
+  if (drops.ammo) items.push(emojiSprite('📦', 0.8)); if (drops.heart) items.push(emojiSprite('❤️', 0.8));
+  items.forEach((m, i) => { const a = (i / items.length) * Math.PI * 2 + rand(0, 0.5); m.position.set(x, 1.2, z); scene.add(m); loot.push({ m, vx: Math.cos(a) * 2.2, vz: Math.sin(a) * 2.2, vy: 5 + rand(0, 1.5), t: 0, by }); });
+}
+function updateDeaths(dt) {
+  for (let i = corpses.length - 1; i >= 0; i--) {
+    const c = corpses[i], r = c.z.ch.root; c.t += dt;
+    if (c.sun) { // pagi: zombie meleleh masuk tanah sambil berkilau
+      r.position.y -= dt * 1.8; if (Math.random() < dt * 6) burst(new THREE.Vector3(r.position.x, 0.6, r.position.z), ['#fff3b0', '#ffffff']);
+      if (c.t > 1.5) { disposeZombie(c.z); corpses.splice(i, 1); }
+      continue;
+    }
+    const k = Math.min(1, c.t / 0.4), sc = ZK[c.z.kind].scale;
+    r.rotation.x = -1.5 * (1 - Math.pow(1 - k, 3)); // jatuh terjengkang
+    r.position.x += c.ax * dt * 4 * (1 - k); r.position.z += c.az * dt * 4 * (1 - k);
+    r.position.y = Math.max(0, c.y0 + Math.sin(Math.PI * k) * 0.6 * (1 - c.y0));
+    c.z.ch.m.skin.color.set(Math.floor(c.t * 14) % 2 ? '#ffffff' : ZK[c.z.kind].skin);
+    if (c.t > 0.8) r.scale.setScalar(sc * Math.max(0.01, 1 - (c.t - 0.8) / 0.25));
+    if (c.t >= 1.05) {
+      poof(r.position.x, r.position.z, true, 0.8 * sc); if (ZK[c.z.kind].boss) { for (let j = 0; j < 4; j++) setTimeout(() => poof(r.position.x + rand(-2, 2), r.position.z + rand(-2, 2), false, rand(1, 4)), j * 150); }
+      dropLoot(r.position.x, r.position.z, c.drops, c.by); disposeZombie(c.z); corpses.splice(i, 1);
+    }
+  }
+  for (let i = loot.length - 1; i >= 0; i--) {
+    const l = loot[i]; l.t += dt; const m = l.m;
+    if (l.t < 0.55) { l.vy -= 18 * dt; m.position.x += l.vx * dt; m.position.z += l.vz * dt; m.position.y = Math.max(0.35, m.position.y + l.vy * dt); }
+    else { // terbang ke pemain yang mengalahkan
+      const tp = l.by === net.id || l.by === 'me' ? player.pos : remotes.get(l.by)?.ch.root.position; if (!tp) { scene.remove(m); loot.splice(i, 1); continue; }
+      const ty = (l.by === net.id || l.by === 'me' ? player.y : tp.y) + 1.4, dx = tp.x - m.position.x, dy = ty - m.position.y, dz = tp.z - m.position.z, d = Math.hypot(dx, dy, dz), sp = Math.min(d, (8 + l.t * 20) * dt);
+      m.position.x += (dx / (d || 1)) * sp; m.position.y += (dy / (d || 1)) * sp; m.position.z += (dz / (d || 1)) * sp;
+      if (d < 0.5 || l.t > 3) { scene.remove(m); loot.splice(i, 1); if (l.by === net.id || l.by === 'me') tone(1200 + rand(0, 300), 0.08, { type: 'triangle', vol: 0.05 }); continue; }
+    }
+    m.rotation.y += dt * 8;
+  }
+}
+// hadiah untuk yang mengalahkan: koin (+ kadang amunisi / ½ nyawa), combo, isi Bintang Super
+const nightSt = { kills: 0, best: 0, combo: 0, lastKill: -9, superP: 0, boss: false, played: false, banner: '' };
+const SUPER_MAX = 10;
+function rewardKill(kind = 0, id = '') {
+  const k = ZK[kind] || ZK[0], d = dropsFor(id, kind);
+  let coins = d.coins;
+  save.zkills = (save.zkills || 0) + 1; nightSt.kills++;
+  nightSt.combo = elapsed - nightSt.lastKill < 3.5 ? nightSt.combo + 1 : 1; nightSt.lastKill = elapsed; nightSt.best = Math.max(nightSt.best, nightSt.combo);
+  const bonus = { 3: 1, 5: 2, 8: 3, 12: 5 }[nightSt.combo] || 0; coins += bonus;
+  if (nightSt.combo >= 2) showCombo(nightSt.combo, bonus);
+  if (d.ammo && save.gun) save.ammo = (save.ammo || 0) + d.ammo;
+  if (d.heart) save.hp = Math.min(save.maxHp || 5, (save.hp ?? 3) + (k.boss ? 2 : 0.5));
+  save.coins = (save.coins || 0) + coins;
+  nightSt.superP = Math.min(SUPER_MAX, nightSt.superP + (k.boss ? 5 : 1)); updateSuper();
+  persist(); updateVitals(); floatText(`+${coins} 🪙${d.ammo && save.gun ? ' 📦' : ''}${d.heart ? ' ❤️' : ''}`);
+}
+function bossDown() {
+  nightSt.boss = true; shakeCam(0.7); celebrate('big'); SFX.fanfare();
+  if (playing && !me.down && W.islandOf(player.pos.x, player.pos.z) === bossIsle) { save.coins = (save.coins || 0) + 5; persist(); updateVitals(); }
+  showBanner('👑 RAJA ZOMBIE KALAH! Semua dapat 🪙 5', 'win');
+  say('Hore! Raja Zombie kalah! Kalian hebat sekali, kerja sama yang luar biasa!', { force: true });
+}
+let bossIsle = 'balok';
+
+/* ---------- serangan pemain ---------- */
+// pukulan/tembakan pemain ini (kerusakan sudah dihitung sesuai tingkat pemain); 15% KRITIS = kerusakan ganda
+function hitZombie(id, dmg, power = 1) {
   const z = zombies.get(id); if (!z) return;
+  const crit = Math.random() < 0.15; if (crit) dmg *= 2;
+  z.flash = 0.2; tone(crit ? 980 : 520 + rand(0, 120), 0.08, { type: 'square', slide: 0.6, vol: 0.05 });
+  dmgText(z, crit ? `${Math.round(dmg)}!` : `${Math.round(dmg)}`, crit);
+  if (amZHost()) applyHit(id, dmg, net.id || 'me', power); else send({ t: 'zhit', id, dmg, pw: power });
+}
+function applyHit(id, dmg, by, power = 1) {
+  const z = zombies.get(id); if (!z) return; const k = ZK[z.kind];
   z.hp -= dmg; z.flash = 0.2;
   const p = by === net.id || by === 'me' ? player.pos : remotes.get(by)?.ch.root.position;
-  if (p) { const dx = z.x - p.x, dz = z.z - p.z, d = Math.hypot(dx, dz) || 1; z.x += (dx / d) * 0.8; z.z += (dz / d) * 0.8; }
+  const push = (k.boss ? 1 : k.heavy ? 3 : 7) * power;
+  if (p) { const dx = z.x - p.x, dz = z.z - p.z, d = Math.hypot(dx, dz) || 1; z.kx = (dx / d) * push; z.kz = (dz / d) * push; }
+  // dipukul saat ancang-ancang: serangannya batal (kecuali Raja Zombie)
+  if (!k.boss && z.st !== ZST.leap && z.rise >= 1) { z.st = ZST.stun; z.stT = k.heavy ? 0.12 : 0.25; }
   if (z.hp <= 0) killZombie(id, by === 'me' ? net.id || 'me' : by);
 }
+// angka kerusakan melayang
+const numMats = new Map();
+function dmgText(z, txt, crit) {
+  const key = txt + (crit ? 'c' : '');
+  if (!numMats.has(key)) numMats.set(key, new THREE.SpriteMaterial({ map: canvasTex(192, 96, (g) => { g.font = `800 ${crit ? 70 : 60}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 12; g.strokeStyle = '#1d2b53'; g.strokeText(txt, 96, 50); g.fillStyle = crit ? '#ffd23a' : '#ffffff'; g.fillText(txt, 96, 50); }), transparent: true, depthTest: false }));
+  const sp = new THREE.Sprite(numMats.get(key).clone()); const s = crit ? 1.5 : 1.0; sp.scale.set(s, s / 2, 1);
+  const r = z.ch.root.position; sp.position.set(r.x + rand(-0.4, 0.4), r.y + 2.9 * ZK[z.kind].scale, r.z); sp.renderOrder = 5; scene.add(sp);
+  zfx.push({ t: 0, life: 0.9, tick: (f, dt) => { sp.position.y += dt * 1.6; sp.material.opacity = 1 - f; }, end: () => { scene.remove(sp); sp.material.dispose(); } });
+}
+
+/* ---------- efek bersama: ludah lendir, hentakan Raja, pendaratan ---------- */
+const zfx = [];
+function onZEvent(m) {
+  if (m.t === 'zspit') {
+    const ball = new THREE.Mesh(geoSphere, new THREE.MeshLambertMaterial({ color: '#8be04a', emissive: '#2f6b10' })); ball.scale.setScalar(0.45); scene.add(ball);
+    const mark = new THREE.Mesh(RISE_GEO, new THREE.MeshBasicMaterial({ color: '#8be04a', transparent: true, opacity: 0.8, depthWrite: false })); mark.position.set(m.tx, 0.08, m.tz); mark.scale.setScalar(1.3); scene.add(mark);
+    if (Math.hypot(m.x - player.pos.x, m.z - player.pos.z) < 25) tone(260, 0.25, { type: 'sine', slide: 2.2, vol: 0.06 });
+    zfx.push({ t: 0, life: 1.1, tick: (f) => { ball.position.set(m.x + (m.tx - m.x) * f, 1.8 + Math.sin(Math.PI * f) * 3.2 - f * 1.6, m.z + (m.tz - m.z) * f); mark.scale.setScalar(1.3 + Math.sin(f * 20) * 0.08); mark.material.opacity = 0.5 + f * 0.4; },
+      end: () => {
+        scene.remove(ball); ball.material.dispose(); scene.remove(mark); mark.material.dispose(); burst(new THREE.Vector3(m.tx, 0.4, m.tz), ['#8be04a', '#c6e86a', '#5fb953']);
+        if (Math.hypot(m.tx - player.pos.x, m.tz - player.pos.z) < 1.5 && player.y < 1.2 && playing && !me.down) hurtMe({ x: m.x, z: m.z }, 1);
+      } });
+  } else if (m.t === 'zslam') {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.22, 8, 48), new THREE.MeshBasicMaterial({ color: '#ff5a3c', transparent: true, opacity: 0.9 })); ring.rotation.x = -Math.PI / 2; ring.position.set(m.x, 0.25, m.z); scene.add(ring);
+    const near = Math.hypot(m.x - player.pos.x, m.z - player.pos.z); if (near < 30) { shakeCam(0.7); tone(70, 0.6, { type: 'square', slide: 0.5, vol: 0.12 }); burst(new THREE.Vector3(m.x, 0.5, m.z), ['#a5764a', '#c9b48a', '#ff5a3c']); }
+    let hit = false;
+    zfx.push({ t: 0, life: 0.6, tick: (f) => { const r = 0.5 + f * m.r; ring.scale.setScalar(r); ring.material.opacity = 0.9 * (1 - f);
+      const d = Math.hypot(m.x - player.pos.x, m.z - player.pos.z); if (!hit && Math.abs(d - r) < 0.9 && player.onGround && playing && !me.down) { hit = true; hurtMe({ x: m.x, z: m.z }, 3); } },
+      end: () => { scene.remove(ring); ring.geometry.dispose(); ring.material.dispose(); } });
+  } else if (m.t === 'zfx' && m.k === 'heat') {
+    nightSt.heat = Math.max(nightSt.heat || 0, m.lv);
+    showBanner(`⚡ SERBUAN! Zombie makin kuat · level ${m.lv}`, 'warn'); [0, 0.15, 0.3, 0.45].forEach((d, i) => tone(160 + i * 40, 0.18, { type: 'sawtooth', vol: 0.05, delay: d })); shakeCam?.(0.3);
+  } else if (m.t === 'zfx' && m.k === 'land') {
+    if (Math.hypot(m.x - player.pos.x, m.z - player.pos.z) < 30) { burst(new THREE.Vector3(m.x, 0.3, m.z), ['#a5764a', '#c9b48a']); tone(110, 0.2, { type: 'square', slide: 0.6, vol: 0.06 }); }
+  }
+}
+const geoSphere = new THREE.SphereGeometry(1, 12, 8);
+function updateZfx(dt) { for (let i = zfx.length - 1; i >= 0; i--) { const e = zfx[i]; e.t += dt; const f = Math.min(1, e.t / e.life); e.tick(f, dt); if (f >= 1) { e.end(); zfx.splice(i, 1); } } }
+
+/* ---------- gambar zombie setiap bingkai (semua perangkat) ---------- */
+let zDayT = 0;
 function updateZombies(dt) {
+  // siang tidak boleh ada zombie: yang tersisa/terlewat meleleh (tuan rumah memberi tahu semua; perangkat lain membersihkan sendiri bila tuan rumah diam)
+  if (worldSt.phase !== 'night' && zombies.size) {
+    zDayT += dt;
+    if (amZHost()) { for (const z of [...zombies.values()]) killZombie(z.id, null, true); }
+    else if (zDayT > 3) for (const z of [...zombies.values()]) dieFx(z, null, true);
+  } else zDayT = 0;
   if (amZHost()) zombieHostTick(dt);
+  let boss = null;
   for (const z of zombies.values()) {
-    const root = z.ch.root;
-    if (!amZHost()) { const k = 1 - Math.exp(-dt * 10); root.position.x += (z.tx - root.position.x) * k; root.position.z += (z.tz - root.position.z) * k; z.x = root.position.x; z.z = root.position.z; }
+    const root = z.ch.root, k = ZK[z.kind];
+    if (!amZHost()) { const kk = 1 - Math.exp(-dt * 10); root.position.x += (z.tx - root.position.x) * kk; root.position.z += (z.tz - root.position.z) * kk; z.x = root.position.x; z.z = root.position.z; z.y += (z.ty - z.y) * kk; }
     else root.position.set(z.x, 0, z.z);
-    root.position.y = -2.4 * (1 - z.rise);
+    // tanda muncul: lingkaran ungu berdenyut, lalu zombie bangkit dari tanah sambil menyemburkan tanah
+    z.mark.visible = z.rise < 1; if (z.mark.visible) { z.mark.position.set(z.x, 0.07, z.z); z.mark.rotation.y += dt * 3; z.mark.material.opacity = 0.5 + Math.sin(elapsed * 10) * 0.35; }
+    if (z.rise >= 0 && !z.dirt) { z.dirt = true; if (Math.hypot(z.x - player.pos.x, z.z - player.pos.z) < 28) { burst(new THREE.Vector3(z.x, 0.3, z.z), ['#7a5432', '#a5764a', '#b36bf2']); tone(k.voice, 0.6, { type: 'sawtooth', slide: 0.7, vol: 0.035 }); } }
+    root.position.y = (z.rise < 0 ? -2.6 : -2.4 * (1 - z.rise)) * k.scale + (z.y || 0);
     root.rotation.y = z.f;
-    z.phase += dt * 6; const sw = Math.sin(z.phase) * 0.5;
+    // perubahan keadaan (semua perangkat): teriak saat melihat pemain
+    if (z.st !== z.lastSt) { z.lastSt = z.st; z.stAge = 0; if (z.st === ZST.roar && Math.hypot(z.x - player.pos.x, z.z - player.pos.z) < 24) tone(k.voice, 0.45, { type: 'sawtooth', slide: 1.4, vol: 0.04 }); }
+    z.stAge += dt;
+    z.alert.visible = z.st === ZST.roar;
+    const moving = z.st === ZST.walk && z.rise >= 1;
+    z.phase += dt * (moving ? 6 * (k.zig ? 1.5 : 1) : 2); const sw = moving ? Math.sin(z.phase) * 0.5 : 0;
     z.ch.hipL.rotation.x = sw; z.ch.hipR.rotation.x = -sw; z.ch.body.rotation.z = Math.sin(z.phase * 0.5) * 0.08;
     z.attackT = Math.max(0, (z.attackT || 0) - dt);
-    z.ch.shL.rotation.x = -1.45 + (z.attackT ? -0.6 : Math.sin(z.phase) * 0.12); z.ch.shR.rotation.x = -1.35 + (z.attackT ? -0.6 : -Math.sin(z.phase) * 0.12);
+    let armL = -1.45 + Math.sin(z.phase) * 0.12, armR = -1.35 - Math.sin(z.phase) * 0.12, lean = 0, tint = null;
+    if (z.st === ZST.wind || z.st === ZST.slam) { armL = armR = -2.9; lean = -0.25; tint = Math.floor(elapsed * 12) % 2 ? '#ff8a8a' : null; } // ancang-ancang: tangan naik, berkedip merah
+    if (z.st === ZST.spit) { armL = armR = -0.6; lean = -0.35; tint = '#d8ff7a'; }
+    if (z.st === ZST.leap) { armL = armR = -2.4; lean = 0.3; }
+    if (z.st === ZST.roar) { armL = armR = -2.6; lean = -0.2; }
+    if (z.st === ZST.stun) { lean = -0.35; }
+    if (z.attackT) { armL = armR = -0.6; lean = 0.25; }
+    z.ch.shL.rotation.x = armL; z.ch.shR.rotation.x = armR; root.rotation.x = lean;
+    // lingkaran merah peringatan hentakan Raja Zombie
+    if (z.st === ZST.slam) {
+      if (!z.ring) { z.ring = new THREE.Mesh(RISE_GEO, new THREE.MeshBasicMaterial({ color: '#ff3b30', transparent: true, opacity: 0.6, depthWrite: false })); scene.add(z.ring); }
+      z.ring.visible = true; z.ring.position.set(z.x, 0.08, z.z); z.ring.scale.setScalar(1 + Math.min(1, z.stAge / 1.2) * 6);
+    } else if (z.ring) z.ring.visible = false;
     z.fg.scale.x = 1.04 * clamp(z.hp / z.max, 0, 1); z.fg.position.x = -0.52 * (1 - clamp(z.hp / z.max, 0, 1));
-    z.bar.quaternion.copy(camera.quaternion); z.bar.visible = z.hp < z.max;
-    z.flash = Math.max(0, z.flash - dt); z.ch.m.skin.color.set(z.flash > 0 ? '#ffffff' : '#9bd77a');
+    z.bar.quaternion.copy(camera.quaternion); z.bar.visible = z.hp < z.max && !k.boss;
+    z.flash = Math.max(0, z.flash - dt); z.ch.m.skin.color.set(z.flash > 0 ? '#ffffff' : tint || k.skin);
+    // erangan sesekali dari zombie dekat
+    if ((z.groanT -= dt) <= 0) { z.groanT = rand(4, 9); const d = Math.hypot(z.x - player.pos.x, z.z - player.pos.z); if (d < 18 && z.rise >= 1 && playing) tone(k.voice * rand(0.9, 1.1), 0.7, { type: 'sawtooth', slide: 0.75, vol: 0.035 * (1 - d / 18) + 0.005 }); }
+    if (k.boss) boss = z;
   }
+  if (boss) bossIsle = W.islandOf(boss.x, boss.z);
+  updateDeaths(dt); updateZfx(dt); updateBossBar(boss); zAmbience(dt);
+}
+
+/* ---------- suasana malam: dag-dig-dug, detak jantung saat nyawa tinggal sedikit ---------- */
+let ambT = 0, ambStep = 0;
+function zAmbience(dt) {
+  if (!nightDanger() || !playing || activeZone || me.down) return;
+  const wv = waveInfo(); const fast = wv?.boss ? 0.42 : wv?.active ? 0.6 : 1.1;
+  if ((ambT -= dt) > 0) return; ambT = fast; ambStep++;
+  const nearZ = [...zombies.values()].some((z) => Math.hypot(z.x - player.pos.x, z.z - player.pos.z) < 16);
+  tone(ambStep % 4 === 3 ? 62 : 49, 0.28, { type: 'triangle', vol: nearZ ? 0.09 : 0.05 });
+  if (wv?.boss && ambStep % 2) tone(98, 0.15, { type: 'square', vol: 0.025 });
+  if ((save.hp ?? 3) <= 1 && ambStep % 2 === 0) { tone(60, 0.1, { type: 'sine', vol: 0.18 }); tone(55, 0.1, { type: 'sine', vol: 0.15, delay: 0.16 }); }
+}
+
+/* ---------- HUD malam: banner gelombang, combo, Bintang Super, nyawa Raja Zombie, ringkasan pagi ---------- */
+let bannerT = 0;
+function showBanner(txt, cls = '') { const el = $('#zBanner'); el.textContent = txt; el.className = cls; el.hidden = false; void el.offsetWidth; el.classList.add('on'); clearTimeout(bannerT); bannerT = setTimeout(() => (el.hidden = true), 2800); }
+let comboT = 0;
+function showCombo(n, bonus) { const el = $('#combo'); el.textContent = `🔥 COMBO x${n}${bonus ? ` +${bonus}🪙` : ''}`; el.hidden = false; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); clearTimeout(comboT); comboT = setTimeout(() => (el.hidden = true), 1800);
+  if (bonus) { toast(pick(['🔥 Hebat!', '⭐ Mantap!', '🏆 Luar biasa!', '💪 Hebat sekali!'])); tone(880, 0.12, { type: 'triangle', vol: 0.08 }); tone(1175, 0.18, { type: 'triangle', vol: 0.08, delay: 0.1 }); } }
+function updateSuper() { const b = $('#superBtn'), p = nightSt.superP / SUPER_MAX; b.style.setProperty('--p', `${Math.round(p * 360)}deg`); b.classList.toggle('ready', p >= 1); }
+function updateBossBar(boss) {
+  const el = $('#bossBar'); el.hidden = !boss || !playing; if (!boss) return;
+  $('#bossFill').style.width = `${Math.round(clamp(boss.hp / boss.max, 0, 1) * 100)}%`;
+}
+let waveSeen = '';
+function waveHud() {
+  const wv = waveInfo(); if (!wv || !playing) { waveSeen = ''; return; }
+  nightStart();
+  const key = `${worldSt.start}:${wv.n}:${wv.active}`; if (key === waveSeen) return; waveSeen = key;
+  if (wv.n === 0) { nightStart(); showBanner(`🌙 Malam! Zombie datang dalam ${Math.ceil(wv.left)} detik`, 'warn'); return; }
+  if (wv.active) { [0, 0.25, 0.5].forEach((d) => tone(196, 0.2, { type: 'square', vol: 0.06, delay: d })); showBanner(wv.boss ? `👑 GELOMBANG TERAKHIR: RAJA ZOMBIE!` : `🧟 GELOMBANG ${wv.n} dari ${wv.total}`, wv.boss ? 'boss' : ''); if (wv.boss) say('Awas! Raja Zombie datang! Kalau tanahnya bergetar merah, LOMPAT supaya tidak terkena!', { force: true }); }
+  else { tone(659, 0.2, { type: 'triangle', vol: 0.08 }); showBanner(`✨ Istirahat ${Math.round(wv.left)} detik: isi amunisi & nyawa!`, 'calm'); }
+}
+function nightStart() { if (nightSt.played) return; Object.assign(nightSt, { kills: 0, best: 0, combo: 0, superP: 0, boss: false, played: true, heat: 0 }); updateSuper(); }
+// pagi: ringkasan malam + bonus bertahan
+function nightSummary() {
+  if (!nightSt.played) return; nightSt.played = false;
+  const alive = !me.down && (save.hp ?? 0) > 0, bonus = alive ? 3 : 0;
+  if (bonus) { save.coins = (save.coins || 0) + bonus; persist(); updateVitals(); }
+  const parts = [`🧟 ${nightSt.kills} zombie`, nightSt.best >= 2 ? `🔥 combo x${nightSt.best}` : '', nightSt.boss ? '👑 Raja kalah' : '', nightSt.heat ? `⚡ level ${nightSt.heat}` : '', bonus ? `🪙 +${bonus} bertahan` : ''].filter(Boolean);
+  const el = $('#nightSum'); el.innerHTML = '<b>🌅 Malam selesai!</b><span></span>'; el.querySelector('span').textContent = parts.join(' · '); el.hidden = false; setTimeout(() => (el.hidden = true), 7000);
+}
+let shake = 0;
+function shakeCam(a) { shake = Math.max(shake, a); }
+// Bintang Super: ledakan bintang yang menghempas semua zombie di dekatmu
+function useSuper() {
+  if (nightSt.superP < SUPER_MAX || me.down || activeZone || !playing) { if (nightSt.superP < SUPER_MAX) toast(`🌟 Kalahkan ${SUPER_MAX - nightSt.superP} zombie lagi untuk Bintang Super`); return; }
+  nightSt.superP = 0; updateSuper(); me.inv = Math.max(me.inv, 1.5); shakeCam(0.5); SFX.fanfare();
+  const p = player.pos, ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.3, 8, 48), new THREE.MeshBasicMaterial({ color: '#ffd23a', transparent: true })); ring.rotation.x = -Math.PI / 2; ring.position.set(p.x, player.y + 0.5, p.z); scene.add(ring);
+  zfx.push({ t: 0, life: 0.6, tick: (f) => { ring.scale.setScalar(0.5 + f * 9); ring.material.opacity = 1 - f; }, end: () => { scene.remove(ring); ring.geometry.dispose(); ring.material.dispose(); } });
+  for (let i = 0; i < 6; i++) burst(new THREE.Vector3(p.x + Math.cos(i) * 3, 1.2 + player.y, p.z + Math.sin(i) * 3), ['#ffd23a', '#ffffff', '#ff8fc0']);
+  const mult = DMG_MULT[combatLevel()];
+  for (const z of [...zombies.values()]) if (z.rise >= 1 && Math.hypot(z.x - p.x, z.z - p.z) < 9) hitZombie(z.id, 8 * mult, 2.2);
+  floatText('🌟 BINTANG SUPER!');
 }
 
 /* =========================================================
    NYAWA, PINGSAN, PUKUL & TEMBAK
    ========================================================= */
-const me = { inv: 0, down: false, punchCd: 0, shootCd: 0, punchT: 0 };
-function hurtMe(z) {
-  if (me.inv > 0 || me.down || (activeZone && isSafeZone(activeZone)) || inSafe(player.pos.x, player.pos.z)) return;
+const me = { inv: 0, down: false, punchCd: 0, shootCd: 0, punchT: 0, firing: false };
+function hurtMe(z, push = 1.4) {
+  if (me.paused || me.inv > 0 || me.down || (activeZone && isSafeZone(activeZone)) || inSafe(player.pos.x, player.pos.z)) return;
   save.hp = Math.max(0, (save.hp ?? 3) - HURT_BY[combatLevel()]); me.inv = 1.2;
-  const dx = player.pos.x - z.x, dz = player.pos.z - z.z, d = Math.hypot(dx, dz) || 1; player.pos.x += (dx / d) * 1.4; player.pos.z += (dz / d) * 1.4; player.vy = 4;
+  const dx = player.pos.x - z.x, dz = player.pos.z - z.z, d = Math.hypot(dx, dz) || 1; player.pos.x += (dx / d) * push; player.pos.z += (dz / d) * push; player.vy = 4 + push;
   const v = $('#hurt'); v.classList.remove('on'); void v.offsetWidth; v.classList.add('on');
-  tone(180, 0.25, { type: 'square', slide: 0.6, vol: 0.06 });
+  tone(180, 0.25, { type: 'square', slide: 0.6, vol: 0.06 }); shakeCam(0.35); nightSt.combo = 0;
   updateVitals(); persist();
   if (save.hp <= 0) goDown();
 }
@@ -3570,10 +3999,10 @@ const spec = { on: false, idx: 0, id: null };
 function goDown() {
   if ((save.hp ?? 3) > 0) return;
   if (activeZone) leaveZone();
-  player.target = null; joyEnd();
+  player.target = null; joyEnd(); me.firing = false;
   if (!nightDanger()) { say('Nyawamu habis. Tenang, belajar di satu tempat bermain, nanti Kak Rara kasih satu nyawa!', { force: true }); return; }
   me.down = true; send({ t: 'alive', down: true });
-  say('Nyawamu habis! Sekarang kamu menonton teman. Beli nyawa di toko untuk main lagi, atau tunggu pagi.', { force: true });
+  say('Yah, nyawamu habis! Tonton teman dulu, atau beli nyawa di toko.', { force: true });
   startSpectate();
 }
 function revive() {
@@ -3582,7 +4011,7 @@ function revive() {
   let best = null, bd = 1e9;
   for (const q of Object.values(zones)) { if (!isSafeZone(q)) continue; const d = Math.hypot(player.pos.x - q.cx, player.pos.z - q.cz); if (d < bd) { bd = d; best = q; } }
   if (best) { const [x, z] = best.approach(3.6); teleport(x, z); }
-  me.inv = 3; say('Hore, kamu main lagi! Kamu muncul di zona aman.', { force: true });
+  me.inv = 3; say('Yeay, main lagi! Ayo!', { force: true });
 }
 // siang hari: selesai belajar 1 ronde saat nyawa habis = otomatis dapat 1 nyawa (hanya bila nyawa 0)
 function learnHeart() {
@@ -3618,43 +4047,70 @@ const WEAPONS = {
   tangan: { name: 'Tangan', e: '👊', kind: 'melee', dmg: 1, range: 1.9 },
   pedang: { name: 'Pedang Kayu', e: '🗡️', kind: 'melee', dmg: 2, range: 2.3, price: 30 },
   palu: { name: 'Palu Mainan', e: '🔨', kind: 'melee', dmg: 3, range: 2.6, area: true, price: 60 },
-  ketapel: { name: 'Ketapel', e: '🎯', kind: 'gun', dmg: 1, rate: 0.55, cost: 1, color: '#c98f52', price: 20 },
-  pistolair: { name: 'Pistol Air', e: '🔫', kind: 'gun', dmg: 1, rate: 0.22, cost: 1, color: '#2ec4f0', price: 40 },
-  gelembung: { name: 'Blaster Gelembung', e: '🫧', kind: 'gun', dmg: 2, rate: 0.35, cost: 1, color: '#ff8fc0', price: 80 },
-  konfeti: { name: 'Meriam Konfeti', e: '🎉', kind: 'gun', dmg: 3, rate: 0.8, cost: 2, splash: 2.6, color: '#ffd23a', price: 150 },
+  ketapel: { name: 'Ketapel', e: '🎯', kind: 'gun', dmg: 1, rate: 0.55, cost: 1, color: '#c98f52', price: 20, snd: [500, 0.12, 'sine', 0.5] },
+  pistolair: { name: 'Pistol Air', e: '🔫', kind: 'gun', dmg: 1, rate: 0.22, cost: 1, color: '#2ec4f0', price: 40, snd: [1200, 0.08, 'square', 0.4] },
+  gelembung: { name: 'Blaster Gelembung', e: '🫧', kind: 'gun', dmg: 2, rate: 0.35, cost: 1, color: '#ff8fc0', price: 80, snd: [320, 0.14, 'sine', 2.2] },
+  konfeti: { name: 'Meriam Konfeti', e: '🎉', kind: 'gun', dmg: 3, rate: 0.8, cost: 2, splash: 2.6, color: '#ffd23a', price: 150, snd: [140, 0.25, 'square', 0.5] },
 };
 function facingDir() { return CAM_MODES[view.mode].fp ? [-Math.sin(view.yaw), -Math.cos(view.yaw)] : [Math.sin(player.facing), Math.cos(player.facing)]; }
+// kombo bela diri: tinju kanan → tinju kiri → tendangan → tendangan berputar (penutup). Tekan berulang / tahan tombol.
+const MOVES = [
+  { k: 'R', dur: 0.3, dmg: 1, push: 1.2, reach: 0, lunge: 1.4, snd: 620 },
+  { k: 'L', dur: 0.3, dmg: 1, push: 1.2, reach: 0, lunge: 1.4, snd: 700 },
+  { k: 'K', dur: 0.42, dmg: 1.5, push: 1.9, reach: 0.5, lunge: 2.2, snd: 430, name: '🦵 Tendang!' },
+  { k: 'S', dur: 0.58, dmg: 2.5, push: 2.8, reach: 0.8, lunge: 1.2, area: true, snd: 300, name: '🌀 Tendangan Putar!' },
+];
 function punch() {
-  if (me.down || activeZone || me.punchCd > 0 || !playing || paused()) return;
-  const w = WEAPONS[save.melee] || WEAPONS.tangan; me.punchCd = 0.35; me.punchT = 0.25;
-  const mult = DMG_MULT[combatLevel()];
+  if (me.down || activeZone || !playing || paused()) return;
+  if (me.fight) { if (me.fight.t > me.fight.mv.dur * 0.45) me.queued = true; return; } // tekanan cepat disimpan untuk gerakan berikutnya
+  const now = performance.now(), i = now - (me.lastEnd || 0) < 700 ? ((me.comboI ?? -1) + 1) % MOVES.length : 0; // lanjut kombo bila ditekan ≤0,7 detik setelah gerakan sebelumnya
+  me.comboI = i; me.fseq = (me.fseq || 0) + 1; me.punchT = 0;
+  const mv = MOVES[i]; me.fight = { mv, i, t: 0, hit: false };
   // bantu bidik: hadap ke zombie terdekat dalam jangkauan
-  let near = null, nd = w.range + 1.2;
+  const w = WEAPONS[save.melee] || WEAPONS.tangan; let near = null, nd = w.range + mv.reach + 1.2;
   for (const z of zombies.values()) { const d = Math.hypot(z.x - player.pos.x, z.z - player.pos.z); if (d < nd && z.rise >= 1) { nd = d; near = z; } }
   if (near) player.facing = Math.atan2(near.x - player.pos.x, near.z - player.pos.z);
+  tone(mv.snd, 0.13, { type: 'triangle', slide: 0.55, vol: 0.06 });
+}
+// saat pukulan/tendangan mengenai (sepertiga gerakan): kerusakan, dorongan, efek
+function strike(mv) {
+  const w = WEAPONS[save.melee] || WEAPONS.tangan, mult = DMG_MULT[combatLevel()], area = w.area || mv.area, range = w.range + mv.reach;
   const [fx, fz] = [Math.sin(player.facing), Math.cos(player.facing)];
+  if (player.onGround && !veh.kind && !ride && !transit) player.knock = { x: fx * mv.lunge, z: fz * mv.lunge, t: 0.12 }; // melangkah maju
   let hit = false;
   for (const z of [...zombies.values()]) {
     const dx = z.x - player.pos.x, dz = z.z - player.pos.z, d = Math.hypot(dx, dz);
-    if (z.rise < 1 || d > w.range + 0.3 * ZK[z.kind].scale) continue;
-    if (d > 1.1 && (dx * fx + dz * fz) / d < 0.25) continue;
-    hitZombie(z.id, w.dmg * mult); hit = true; if (!w.area) break;
+    if (z.rise < 1 || d > range + 0.3 * ZK[z.kind].scale) continue;
+    if (!mv.area && d > 1.1 && (dx * fx + dz * fz) / d < 0.25) continue;
+    hitZombie(z.id, w.dmg * mult * mv.dmg, (w.area ? 1.6 : 1.2) * mv.push); hit = true; burst(new THREE.Vector3(z.x, 1.6, z.z), mv.area ? ['#ffffff', '#ffd23a', '#ff8a2a', '#7cc8f5'] : ['#ffffff', '#ffd23a']); if (!area) break;
   }
+  if (hit) shakeCam(mv.area ? 0.3 : mv.k === 'K' ? 0.18 : 0.1);
+  if (mv.name && (hit || mv.area)) floatText(mv.name);
   // pukul teman: main-main saja, nyawa tidak berkurang (teman terdorong sedikit)
   if (!hit) {
-    let tgt = null, td = 2.2;
+    let tgt = null, td = 2.2 + mv.reach;
     for (const r of remotes.values()) {
       if (r.down || r.zone) continue; const p = r.ch.root.position, d = Math.hypot(p.x - player.pos.x, p.z - player.pos.z);
       if (d < td && Math.abs((r.target.y || 0) - player.y) < 1.5) { td = d; tgt = r; }
     }
     if (tgt) {
       const p = tgt.ch.root.position, dx = (p.x - player.pos.x) / (td || 1), dz = (p.z - player.pos.z) / (td || 1);
-      player.facing = Math.atan2(dx, dz); send({ t: 'poke', to: tgt.id, dx: +dx.toFixed(2), dz: +dz.toFixed(2) });
+      if (!mv.area) player.facing = Math.atan2(dx, dz); send({ t: 'poke', to: tgt.id, dx: +dx.toFixed(2), dz: +dz.toFixed(2) });
       pokeFx(tgt.ch, false); hit = true;
     }
   }
   if (hit) SFX.punch(); else SFX.swing();
 }
+// pose gerakan bela diri (dipakai untuk pemain sendiri & teman). k = 0..1
+function fightPose(ch, f) {
+  const k = clamp(f.t / f.mv.dur, 0, 1), a = k < 0.3 ? -0.3 * (k / 0.3) : k < 0.6 ? 1 : Math.max(0, 1 - (k - 0.6) / 0.4), b = Math.max(0, a);
+  ch.shL.rotation.z = 0; ch.shR.rotation.z = 0; ch.body.rotation.x = 0; ch.body.rotation.y = 0;
+  if (f.mv.k === 'R') { ch.shR.rotation.x = -1.75 * a; ch.shL.rotation.x = -1.15; ch.shL.rotation.z = 0.35; ch.body.rotation.y = -0.45 * a; ch.hipL.rotation.x = -0.45 * b; ch.hipR.rotation.x = 0.3 * b; }
+  else if (f.mv.k === 'L') { ch.shL.rotation.x = -1.75 * a; ch.shR.rotation.x = -1.15; ch.shR.rotation.z = -0.35; ch.body.rotation.y = 0.45 * a; ch.hipR.rotation.x = -0.45 * b; ch.hipL.rotation.x = 0.3 * b; }
+  else if (f.mv.k === 'K') { ch.hipR.rotation.x = -1.65 * b; ch.hipL.rotation.x = 0.2 * b; ch.shL.rotation.x = -0.7 - 0.4 * b; ch.shR.rotation.x = 0.5 * b; ch.shL.rotation.z = -0.5 * b; ch.shR.rotation.z = 0.5 * b; ch.body.rotation.x = -0.28 * b; }
+  else { const e = k * k * (3 - 2 * k), up = Math.sin(Math.PI * k); ch.body.rotation.y = e * Math.PI * 2; ch.hipR.rotation.x = -1.45 * up; ch.hipL.rotation.x = 0.2 * up; ch.shL.rotation.x = ch.shR.rotation.x = -0.3; ch.shL.rotation.z = -1.25 * up; ch.shR.rotation.z = 1.25 * up; ch.body.position.y += 0.38 * up; }
+}
+function fightEnd(ch) { ch.body.rotation.y = 0; ch.body.rotation.x = 0; ch.shL.rotation.z = 0; ch.shR.rotation.z = 0; }
 function pokeFx(ch, sound = true) {
   const p = ch.root.position; burst(new THREE.Vector3(p.x, p.y + 1.8, p.z), ['#ffd23a', '#ffffff', '#ff8a2a']);
   if (sound && Math.hypot(p.x - player.pos.x, p.z - player.pos.z) < 25) SFX.punch();
@@ -3666,17 +4122,24 @@ function gotPoked(m, fr) {
   player.knock = { x: (m.dx || 0) * 4, z: (m.dz || 0) * 4, t: 0.2 }; player.vy = 3.5; player.onGround = false;
   if (fr) toast(`${fr.name} memukulmu (main-main) 😄`);
 }
+// peluru bercahaya + kilat moncong
 const shots = [];
-const SHOT_GEO = new THREE.BoxGeometry(0.32, 0.32, 0.32);
-function spawnShot(x, z, dx, dz, color, real, w, target = null) {
-  const m = new THREE.Mesh(SHOT_GEO, new THREE.MeshBasicMaterial({ color })); m.position.set(x, 1.6 + (real ? player.y : 0), z); scene.add(m);
+const SHOT_GEO = new THREE.SphereGeometry(0.2, 10, 8);
+let glowMat = null;
+function spawnShot(x, z, dx, dz, color, real, w, target = null, y = 0) {
+  const m = new THREE.Mesh(SHOT_GEO, new THREE.MeshBasicMaterial({ color })); m.position.set(x, 1.6 + y, z); scene.add(m);
+  glowMat ??= new THREE.SpriteMaterial({ map: radialTex('rgba(255,255,255,1)', 'rgba(255,255,255,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  const g = new THREE.Sprite(glowMat.clone()); g.material.color.set(color); g.scale.setScalar(1.1); m.add(g);
+  const tr = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45 })); tr.scale.set(0.12, 0.12, 1.2); tr.position.z = -0.7; m.add(tr); m.rotation.y = Math.atan2(dx, dz);
+  const fl = new THREE.Sprite(glowMat.clone()); fl.material.color.set('#fff3b0'); fl.scale.setScalar(1.4); fl.position.set(x, 1.6 + y, z); scene.add(fl);
+  zfx.push({ t: 0, life: 0.08, tick: (f) => { fl.material.opacity = 1 - f; }, end: () => { scene.remove(fl); fl.material.dispose(); } });
   shots.push({ m, dx, dz, life: 1.4, real, w, target });
 }
 function shoot() {
   if (me.down || activeZone || me.shootCd > 0 || !playing || paused()) return;
   const w = WEAPONS[save.gun];
-  if (!w) { toast('Belum punya senjata tembak. Beli di Toko 🛒'); return; }
-  if ((save.ammo || 0) < w.cost) { toast('Amunisi habis! Beli di Toko 🛒'); SFX.soft(); return; }
+  if (!w) { toast('Belum punya senjata tembak. Beli di Toko 🛒'); me.firing = false; return; }
+  if ((save.ammo || 0) < w.cost) { toast('Amunisi habis! Beli di Toko 🛒'); SFX.soft(); me.firing = false; return; }
   save.ammo -= w.cost; me.shootCd = w.rate; updateVitals();
   let [dx, dz] = facingDir();
   if (!CAM_MODES[view.mode].fp) { dx = -Math.sin(view.yaw); dz = -Math.cos(view.yaw); }
@@ -3689,36 +4152,49 @@ function shoot() {
   }
   if (best) { const ox = best.x - player.pos.x, oz = best.z - player.pos.z, d = Math.hypot(ox, oz); dx = ox / d; dz = oz / d; }
   player.facing = Math.atan2(dx, dz); me.punchT = 0.18;
-  spawnShot(player.pos.x + dx * 0.8, player.pos.z + dz * 0.8, dx, dz, w.color, true, w, best?.id);
+  spawnShot(player.pos.x + dx * 0.8, player.pos.z + dz * 0.8, dx, dz, w.color, true, w, best?.id, player.y);
   send({ t: 'shot', x: +player.pos.x.toFixed(2), z: +player.pos.z.toFixed(2), dx: +dx.toFixed(3), dz: +dz.toFixed(3), c: w.color, tg: best?.id ?? null });
-  tone(save.gun === 'konfeti' ? 200 : 700, 0.12, { type: 'square', slide: 0.5, vol: 0.05 });
+  const [f0, du, ty, sl] = w.snd || [700, 0.12, 'square', 0.5]; tone(f0 * rand(0.95, 1.05), du, { type: ty, slide: sl, vol: 0.05 });
+  if (save.gun === 'konfeti') shakeCam(0.15);
   if (save.ammo === 0) toast('Amunisi habis');
   persist();
 }
 function updateShots(dt) {
   for (let i = shots.length - 1; i >= 0; i--) {
-    const s = shots[i]; s.life -= dt; const st = 24 * dt;
+    const s = shots[i]; s.life -= dt; const st = 26 * dt;
     // peluru mengejar zombie sasaran (bidik otomatis untuk anak)
     const tz = s.target != null && zombies.get(s.target);
-    if (tz) { const ox = tz.x - s.m.position.x, oz = tz.z - s.m.position.z, od = Math.hypot(ox, oz) || 1; s.dx = ox / od; s.dz = oz / od; s.m.position.y += (1.4 - s.m.position.y) * Math.min(1, dt * 6); }
-    s.m.position.x += s.dx * st; s.m.position.z += s.dz * st; s.m.rotation.y += dt * 10;
+    if (tz) { const ox = tz.x - s.m.position.x, oz = tz.z - s.m.position.z, od = Math.hypot(ox, oz) || 1; s.dx = ox / od; s.dz = oz / od; s.m.position.y += (1.4 * ZK[tz.kind].scale + (tz.y || 0) - s.m.position.y) * Math.min(1, dt * 6); s.m.rotation.y = Math.atan2(s.dx, s.dz); }
+    s.m.position.x += s.dx * st; s.m.position.z += s.dz * st;
     let hitZ = null;
-    if (s.real) for (const z of zombies.values()) { if (z.rise < 1) continue; if (Math.hypot(z.x - s.m.position.x, z.z - s.m.position.z) < 0.75 + 0.4 * ZK[z.kind].scale) { hitZ = z; break; } }
+    for (const z of zombies.values()) { if (z.rise < 1) continue; if (Math.hypot(z.x - s.m.position.x, z.z - s.m.position.z) < 0.75 + 0.4 * ZK[z.kind].scale) { hitZ = z; break; } }
     if (hitZ) {
-      const mult = DMG_MULT[combatLevel()];
-      if (s.w.splash) { burst(s.m.position.clone(), ['#ffd23a', '#ff8fc0', '#7cc8f5', '#ffffff']); for (const z of [...zombies.values()]) if (Math.hypot(z.x - hitZ.x, z.z - hitZ.z) < s.w.splash) hitZombie(z.id, s.w.dmg * mult); }
-      else hitZombie(hitZ.id, s.w.dmg * mult);
+      burst(s.m.position.clone(), [s.m.material.color.getStyle(), '#ffffff']);
+      if (s.real) {
+        const mult = DMG_MULT[combatLevel()];
+        if (s.w.splash) { burst(s.m.position.clone(), ['#ffd23a', '#ff8fc0', '#7cc8f5', '#ffffff']); for (const z of [...zombies.values()]) if (Math.hypot(z.x - hitZ.x, z.z - hitZ.z) < s.w.splash) hitZombie(z.id, s.w.dmg * mult, 1.3); }
+        else hitZombie(hitZ.id, s.w.dmg * mult, 0.8);
+      }
     }
-    if (hitZ || s.life <= 0) { scene.remove(s.m); s.m.material.dispose(); shots.splice(i, 1); }
+    if (hitZ || s.life <= 0) { scene.remove(s.m); s.m.traverse((o) => o.material?.dispose()); shots.splice(i, 1); }
   }
 }
 function updateCombat(dt) {
   me.inv = Math.max(0, me.inv - dt); me.punchCd = Math.max(0, me.punchCd - dt); me.shootCd = Math.max(0, me.shootCd - dt);
+  if (me.firing) shoot(); // tahan tombol tembak = tembak terus
   if (me.punchT > 0) { me.punchT -= dt; player.ch.shR.rotation.x = -1.6 - Math.sin((me.punchT / 0.25) * Math.PI) * 0.8; }
+  if (me.fight) {
+    const f = me.fight; f.t += dt;
+    if (!f.hit && f.t >= f.mv.dur * 0.33) { f.hit = true; strike(f.mv); }
+    if (f.t >= f.mv.dur || me.down || activeZone) { me.fight = null; me.lastEnd = performance.now(); fightEnd(player.ch); if ((me.queued || me.punchHeld) && !me.down) { me.queued = false; punch(); } }
+    else fightPose(player.ch, f);
+  }
   if (me.inv > 0 && !me.down) player.ch.root.visible = player.ch.root.visible && Math.floor(elapsed * 12) % 2 === 0;
-  // tombol pukul selalu ada (siang juga); tombol tembak hanya saat malam/ada zombie
+  // tombol pukul selalu ada (siang juga); tombol tembak & Bintang Super hanya saat malam/ada zombie
   const show = playing && !activeZone && !me.down, night = worldSt.phase === 'night' || zombies.size > 0;
-  $('#fightBox').hidden = !show; $('#shootBtn').hidden = !night;
+  $('#fightBox').hidden = !show; $('#shootBtn').hidden = !night; $('#superBtn').hidden = !night;
+  $('#zk').hidden = !nightDanger() || !playing; $('#zkN').textContent = nightSt.kills;
+  waveHud();
 }
 function floatText(t) { const el = document.createElement('div'); el.className = 'floatTxt'; el.textContent = t; document.body.appendChild(el); setTimeout(() => el.remove(), 1200); }
 function updateVitals() {
@@ -3732,7 +4208,8 @@ function updateVitals() {
 /* =========================================================
    TOKO: tukar bintang belajar jadi koin, beli senjata, amunisi, nyawa
    ========================================================= */
-const STAR_RATE = 5;
+const STAR_RATE = 5; // Pulau Balok: 1 bintang = 5 koin
+const CITY_PAY = 1; // Pulau Kota: jawaban benar di stan soal = 1 koin langsung
 const SHOP_ITEMS = [
   { id: 'nyawa', name: 'Nyawa +1', e: '❤️', price: 15, kind: 'heart' },
   { id: 'nyawapenuh', name: 'Nyawa penuh', e: '💖', price: 40, kind: 'heartfull' },
@@ -3744,7 +4221,6 @@ const SHOP_ITEMS = [
 function openShop() {
   if (activeZone) leaveZone();
   openModal('shop'); renderShop();
-  say(`Selamat datang di toko! Satu bintang belajar bisa ditukar jadi ${STAR_RATE} koin.`);
 }
 function renderShop() {
   const owned = save.weapons || ['tangan'];
@@ -3787,15 +4263,18 @@ function buy(it) {
    PANEL DUNIA UNTUK ORANG TUA (siang/malam & zombie, diverifikasi soal)
    ========================================================= */
 const isAdult = () => ROLES_ADULT.has(save.avatar.role);
-function openWorldPanel() {
-  openModal('worldPanel');
+// kontrol siang/malam & tambah zombie di menu orang tua
+function refreshWorldCtl() {
+  const night = worldSt.phase === 'night'; // zombie hanya bisa ditambah saat malam
+  document.querySelectorAll('#parent .worldCtl [data-a]').forEach((b) => { if (/^\d+$/.test(b.dataset.a)) b.disabled = !night; }); $('#zAdd').disabled = $('#zNum').disabled = !night;
+  $('#zNote').textContent = night ? 'Paling banyak 40 zombie muncul bersamaan supaya tetap lancar; sisanya keluar bergiliran.' : '☀️ Siang hari tidak ada zombie. Jadikan malam dulu untuk menambah zombie.';
   const left = Math.max(0, Math.round((worldSt.ends - wnow()) / 1000));
   $('#worldNow').textContent = `Sekarang ${worldSt.phase === 'night' ? 'malam 🌙' : 'siang ☀️'} · ${wcfg.cycle ? `berganti dalam ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'siklus otomatis mati'}`;
 }
 function worldAction(a) {
-  closeModal('worldPanel'); SFX.tap();
-  if (a === 'night' || a === 'day') { if (!send({ t: 'setPhase', phase: a })) setPhaseLocal(a); }
-  else { const n = +a; if (net.online) send({ t: 'zspawn', n }); else zPending += n; if (worldSt.phase === 'day') toast('Zombie siang hari hilang saat pagi berikutnya… atau kalahkan mereka!'); }
+  SFX.tap();
+  if (a === 'night' || a === 'day') { if (!send({ t: 'setPhase', phase: a })) setPhaseLocal(a); toast(a === 'night' ? '🌙 Malam tiba' : '☀️ Siang tiba'); setTimeout(refreshWorldCtl, 600); setTimeout(refreshWorldCtl, 1500); return; }
+  else { if (worldSt.phase !== 'night') { toast('☀️ Zombie hanya bisa ditambah saat malam'); return; } const n = clamp(Math.round(+a) || 0, 1, 200); if (net.online) send({ t: 'zspawn', n }); else zPending += n; toast(`🧟 +${n} zombie datang!`); }
 }
 
 /* =========================================================
@@ -3842,7 +4321,7 @@ function renderSwatches() {
       const b = document.createElement('button'); b.className = 'hat';
       b.innerHTML = owned ? h.name : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>${h.name}`;
       b.disabled = !owned; b.setAttribute('aria-pressed', String(a.hat === id));
-      if (!owned) b.title = h.tower ? 'Capai puncak Menara Langit untuk membuka' : h.zone ? `Main di ${zones[h.zone].name} untuk membuka` : 'Selesaikan semua petualangan';
+      if (!owned) b.title = h.shop ? `Beli di Toko Topi Pulau Kota (${h.shop} koin)` : h.tower ? 'Capai puncak Menara Langit untuk membuka' : h.zone ? `Main di ${zones[h.zone].name} untuk membuka` : 'Selesaikan semua petualangan';
       b.onclick = () => { a.hat = id; persist(); applyAvatar(); SFX.tap(); renderSwatches(); };
       box.appendChild(b);
     }
@@ -3891,7 +4370,8 @@ const LEVEL_NAMES = {
 };
 function fmtMin(s) { return Math.floor(s / 60); }
 function openParent() {
-  const prevModal = modal; modal = 'parent';
+  const prevModal = modal; modal = 'parent'; refreshWorldCtl(); parentPause(true);
+  $('#resetBtn').disabled = !playerKey; // dibuka dari layar pilih pemain: belum ada kemajuan yang bisa dihapus
   const s = save.settings;
   const used = fmtMin(save.time.sec);
   $('#timeLine').textContent = !playerName ? '' : s.limit
@@ -3916,6 +4396,11 @@ function openParent() {
 }
 const LIMITS = [[15, '15 menit'], [20, '20 menit'], [30, '30 menit'], [45, '45 menit'], [60, '60 menit'], [90, '90 menit'], [0, 'Tanpa batas']];
 let famData = [];
+// hadiah koin dari orang tua
+function getGift(n) {
+  if (n <= 0) return; save.coins = (save.coins || 0) + n; persist(); updateVitals(); floatText(`+${n} 🪙`); SFX.fanfare?.(); celebrate('small');
+  if (playing) say(`Horee! Ayah atau Bunda memberimu ${n} koin hadiah!`, { force: true });
+}
 function renderFamily(m) {
   famData = m.players || []; Object.assign(family, m.config || {});
   $('#setMax').value = String(family.maxPlayers);
@@ -3928,10 +4413,10 @@ function renderFamily(m) {
   for (const p of famData) {
     const st = p.settings || {}; const online = [...remotes.values()].some((r) => r.name === p.name) || p.name === playerName;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td><b></b>${p.role ? '<span class="role">dewasa</span>' : ''}</td>
+    tr.innerHTML = `<td><b></b>${p.role ? '<span class="role">dewasa</span>' : ''}<select class="giftSel" aria-label="Beri koin"><option value="">🎁 Beri koin…</option>${[5, 10, 20, 50, 100].map((n) => `<option value="${n}">+${n} 🪙</option>`).join('')}</select></td>
       <td><select class="lvSel">${DIFFICULTY.map((d, i) => `<option value="${i}">${d}</option>`).join('')}</select></td>
       <td><select class="limSel">${LIMITS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></td>
-      <td>${p.today} mnt</td><td>${p.stars} · ${p.crystals}</td>
+      <td class="num">${p.today} mnt</td><td class="stats">${p.stars} · ${p.crystals} · ${p.coins ?? 0}</td>
       <td><button class="del" title="Hapus pemain" ${online ? 'disabled' : ''}>🗑️</button></td>`;
     tr.querySelector('b').textContent = p.name;
     const lv = tr.querySelector('.lvSel'), lim = tr.querySelector('.limSel');
@@ -3942,6 +4427,8 @@ function renderFamily(m) {
       send({ t: 'setPlayer', name: p.name, settings: set });
     };
     lv.onchange = apply; lim.onchange = apply;
+    const gift = tr.querySelector('.giftSel');
+    gift.onchange = () => { const n = +gift.value; gift.value = ''; if (!n) return; if (!net.online) { if (p.name === playerName) getGift(n); else toast('Perlu tersambung ke server untuk memberi koin pemain lain.'); return; } send({ t: 'giveCoins', name: p.name, n }); toast(`🎁 ${n} koin untuk ${p.name}`); SFX.good(); };
     tr.querySelector('.del').onclick = (e) => {
       const b = e.currentTarget;
       if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Yakin?'; setTimeout(() => { delete b.dataset.armed; b.textContent = '🗑️'; }, 3500); return; }
@@ -3994,7 +4481,7 @@ function renderVoices() {
       : `Sedang dipakai: ${voiceId ? voiceId.name : 'suara bawaan'}.` + (natural ? '' : ' Suara ini masih kaku. Pasang suara yang lebih alami dengan petunjuk di bawah.');
 }
 function setToggle(el, on) { el.setAttribute('aria-pressed', String(on)); el.textContent = on ? 'Nyala' : 'Mati'; }
-$('#parentClose').onclick = () => { $('#parent').hidden = true; modal = $('#parent')._prev || null; if (modal === 'rest') checkTime(true); };
+$('#parentClose').onclick = () => { $('#parent').hidden = true; modal = $('#parent')._prev || null; if (me.paused && !$('#pauseScr').hidden) modal = 'pauseScr'; parentPause(false); if (modal === 'rest') checkTime(true); };
 $('#setVoice').onchange = (e) => { dev.voice = e.target.value; persistDev(); loadVoices(); renderVoices(); speak('Halo! Aku Kak Rara. Apa kabar? Yuk, kita main bersama!'); };
 $('#voiceTest').onclick = () => speak('Halo! Aku Kak Rara. Wah, kamu sudah datang! Hari ini kita mau main apa, ya?');
 $('#setRate').onchange = (e) => { dev.rate = +e.target.value; persistDev(); speak('Halo! Ini kecepatan suaraku.'); };
@@ -4009,6 +4496,7 @@ $('#resetBtn').onclick = (e) => {
   openParent();
 };
 $('#parentBtn').onclick = () => parentGate(openParent);
+$('#loginParent').onclick = () => { SFX.tap(); parentGate(openParent); }; // dari layar pilih pemain, tanpa memilih karakter dulu
 $('#startParent').onclick = () => parentGate(openParent);
 
 let warned = false;
@@ -4029,9 +4517,15 @@ $('#restMore').onclick = () => parentGate(() => { save.time.bonus += 600; warned
 /* =========================================================
    TOMBOL HUD
    ========================================================= */
-$('#homeBtn').onclick = () => { SFX.tap(); leaveZone(); walkTo(0, 7); };
+$('#homeBtn').onclick = () => { SFX.tap(); leaveZone(); if (W.islandOf(player.pos.x, player.pos.z) === 'kota') { const [x, z] = KOTA.CITY_PLACES.alun.go; walkTo(x, z); } else walkTo(0, 7); };
 $('#enterBtn').onclick = () => enterNear();
-$('#punchBtn').onclick = () => punch();
+{ // tombol pukul: bereaksi saat disentuh (bisa sambil menahan joystick); ditahan = kombo terus
+  const pb = $('#punchBtn');
+  pb.addEventListener('pointerdown', (e) => { e.preventDefault(); try { pb.setPointerCapture(e.pointerId); } catch (er) { /* abaikan */ } me.punchHeld = true; punch(); });
+  const up = () => { me.punchHeld = false; };
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) pb.addEventListener(ev, up);
+  pb.addEventListener('click', (e) => { if (e.detail === 0) punch(); }); // keyboard / pembaca layar
+}
 $('#spBack').onclick = () => { SFX.tap(); const z = activeZone; leaveZone(); if (z) { const [x, y] = z.approach(9); walkTo(x, y); } };
 $('#spSay').onclick = () => { if (lastLine) speak(lastLine); };
 // tombol tahan-untuk-bicara (sentuh & mouse)
@@ -4045,19 +4539,25 @@ $('#spNo').onclick = () => { SFX.tap(); speakZone?.manualNo_(); };
 $('#specPrev').onclick = () => { SFX.tap(); spec.idx = (spec.idx - 1 + specTargets().length) % Math.max(1, specTargets().length); renderSpect(); };
 $('#specNext').onclick = () => { SFX.tap(); spec.idx = (spec.idx + 1) % Math.max(1, specTargets().length); renderSpect(); };
 $('#specShop').onclick = () => { SFX.tap(); openShop(); };
-$('#shootBtn').onclick = () => shoot();
+// tahan tombol tembak = tembak terus
+$('#shootBtn').addEventListener('pointerdown', (e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) { /* lama */ } me.firing = true; shoot(); });
+for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) $('#shootBtn').addEventListener(ev, () => (me.firing = false));
+window.addEventListener('blur', () => (me.firing = false));
+$('#superBtn').onclick = () => useSuper();
 $('#shopBtn').onclick = () => { SFX.tap(); openShop(); };
 $('#shopClose').onclick = () => { SFX.tap(); closeModal('shop'); };
-$('#worldBtn').onclick = () => { SFX.tap(); parentGate(openWorldPanel); };
-$('#worldClose').onclick = () => { SFX.tap(); closeModal('worldPanel'); };
-document.querySelectorAll('#worldPanel [data-a]').forEach((b) => (b.onclick = () => worldAction(b.dataset.a)));
+$('#zAdd').onclick = () => { const n = Math.round(+$('#zNum').value); if (!(n >= 1)) { toast('Isi jumlah zombie dulu (1–200)'); return; } $('#zNum').value = ''; worldAction(String(Math.min(200, n))); };
+document.querySelectorAll('#parent .worldCtl [data-a]').forEach((b) => (b.onclick = () => worldAction(b.dataset.a)));
 function openMap() {
   leaveZone(); player.target = null; marker.visible = false; joyEnd();
   const wrap = $('#mapPins'); wrap.innerHTML = '';
-  const S = R + 4; const pct = (v) => `${50 + (v / S) * 50}%`;
+  const inKota = W.islandOf(player.pos.x, player.pos.z) === 'kota'; $('#map .island').classList.toggle('city', inKota);
+  $('#map h2').textContent = inKota ? 'Pulau Kota · mau ke mana?' : 'Mau main di mana?';
+  const S = inKota ? W.CITY.land + 6 : R + 4, ox = inKota ? W.CITY.x : 0, oz = inKota ? W.CITY.z : 0;
+  const pct = (v, o = 0) => `${50 + ((v - o) / S) * 50}%`;
   const target = missionZone();
   const pin = (x, z, emoji, label, color, go, badge = '', hot = false) => {
-    const b = document.createElement('button'); b.className = 'pin'; b.style.left = pct(x); b.style.top = pct(z); b.style.setProperty('--c', color);
+    const b = document.createElement('button'); b.className = 'pin'; b.style.left = pct(x, ox); b.style.top = pct(z, oz); b.style.setProperty('--c', color);
     b.innerHTML = `<span class="e">${emoji}</span><span class="l"></span>`; b.querySelector('.l').textContent = label;
     if (badge) { const s2 = document.createElement('span'); s2.className = 'bd'; s2.textContent = badge; b.appendChild(s2); }
     if (hot) b.classList.add('hot');
@@ -4065,19 +4565,23 @@ function openMap() {
     b.onclick = () => { SFX.tap(); closeModal('map'); go(); };
     wrap.appendChild(b);
   };
+  if (inKota) {
+    for (const p of Object.values(KOTA.CITY_PLACES)) pin(p.x, p.z, p.emoji, p.name, '#ffffff', () => {
+      const [x, z] = p.go; teleport(x, z); view.yaw = Math.atan2(-(p.look[0] - x), -(p.look[1] - z)); toast(`📍 ${p.name}`);
+    }, nightDanger() && KOTA.safeSpots.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 3) ? '🛡️' : '');
+  } else
   for (const z of Object.values(zones)) pin(z.cx, z.cz, ZONE_EMOJI[z.id], z.name, z.color, () => {
     const [x, y] = z.approach(); teleport(x, y); view.yaw = Math.atan2(-(z.cx - x), -(z.cz - y));
-    say(`Wuss! Kita sampai di ${z.name}! Ketuk tombol Masuk kalau mau bermain.`);
+    toast(`📍 ${z.name}`);
   }, [nightDanger() && isSafeZone(z) ? '🛡️' : '', tops[z.id]?.[0]?.name === playerName ? '🥇' : '', save.crystals.includes(z.id) ? '💎' : '', ...[...remotes.values()].filter((r) => r.zone === z.id).map((r) => (r.avatar?.gender === 'P' ? '👧' : '👦'))].join(''), z === target);
-  pin(0, 0, '⛲', 'Tengah', '#f3e7c6', () => { teleport(0, 7); view.yaw = 0; say('Wuss! Kita kembali ke tengah pulau.'); });
-  for (const p of Object.values(W.PLACES)) pin(p.x, p.z, p.emoji, p.name, '#ffffff', () => {
+  if (!inKota) pin(0, 0, '⛲', 'Tengah', '#f3e7c6', () => { teleport(0, 7); view.yaw = 0; toast('📍 Tengah pulau'); });
+  if (!inKota) for (const p of Object.values(W.PLACES)) pin(p.x, p.z, p.emoji, p.name, '#ffffff', () => {
     const [x, z] = p.go, [lx, lz] = p.look || [p.x, p.z]; teleport(x, z); view.yaw = Math.atan2(-(lx - x), -(lz - z));
-    say(`Wuss! Kita sampai di ${p.name}!${p === W.PLACES.menara ? ' Ayo panjat sampai puncak!' : ' Ayo jalan-jalan!'}`);
+    toast(`📍 ${p.name}`);
   });
-  const me = $('#mapMe'); me.style.left = pct(player.pos.x); me.style.top = pct(player.pos.z);
-  for (const r of remotes.values()) { if (r.zone) continue; const d = document.createElement('span'); d.className = 'friend'; d.style.left = pct(r.ch.root.position.x); d.style.top = pct(r.ch.root.position.z); d.textContent = r.name; wrap.appendChild(d); }
+  const me = $('#mapMe'); me.style.left = pct(player.pos.x, ox); me.style.top = pct(player.pos.z, oz);
+  for (const r of remotes.values()) { if (r.zone) continue; const rp = r.ch.root.position; if ((W.islandOf(rp.x, rp.z) === 'kota') !== inKota) continue; const d = document.createElement('span'); d.className = 'friend'; d.style.left = pct(rp.x, ox); d.style.top = pct(rp.z, oz); d.textContent = r.name; wrap.appendChild(d); }
   openModal('map');
-  say('Mau main di mana? Ketuk gambarnya!');
 }
 $('#mapBtn').onclick = () => { SFX.tap(); openMap(); };
 $('#mapClose').onclick = () => { SFX.tap(); closeModal('map'); };
@@ -4096,7 +4600,20 @@ $('#camBtn').onclick = () => { SFX.tap(); const i = CAM_ORDER.indexOf(view.mode)
 $('#mission').onclick = () => { SFX.tap(); tellMission(); };
 // putar layar: Otomatis -> Miring -> Tegak (kunci orientasi butuh layar penuh; iPhone/iPad tidak mengizinkan)
 const ROT = { auto: 'Putar otomatis', landscape: 'Layar miring', portrait: 'Layar tegak' };
+// HP & tablet (layar sentuh): bebas tegak atau miring (tidak dipaksa); tombol 🔄 menjadi tombol layar penuh
+const IS_MOBILE = matchMedia('(hover: none) and (pointer: coarse)').matches;
+if (IS_MOBILE) { document.body.classList.add('mobile'); const rb = $('#rotBtn'); rb.innerHTML = '<span style="font-size:26px">⛶</span>'; rb.setAttribute('aria-label', 'Layar penuh'); }
+async function goFullscreen() {
+  try { if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch (e) { /* iPhone: tidak ada layar penuh */ }
+  try { screen.orientation?.unlock?.(); } catch (e) { /* abaikan */ } // orientasi mengikuti cara anak memegang HP
+}
 $('#rotBtn').onclick = async () => {
+  if (IS_MOBILE) {
+    SFX.tap();
+    if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (e) { /* abaikan */ } toast('Layar penuh mati'); }
+    else { await goFullscreen(); toast(document.fullscreenElement ? '⛶ Layar penuh' : 'Layar penuh tidak didukung browser ini'); }
+    return;
+  }
   SFX.tap(); const order = ['auto', 'landscape', 'portrait'];
   dev.rot = order[(order.indexOf(dev.rot || 'auto') + 1) % order.length]; persistDev();
   const o = screen.orientation;
@@ -4108,8 +4625,12 @@ $('#rotBtn').onclick = async () => {
   } catch (e) { toast('Putar layar tidak diizinkan browser ini. Putar perangkat langsung, ya.'); }
 };
 $('#emoteBtn').onclick = () => { SFX.tap(); const w = $('#emotes'); w.hidden = !w.hidden; };
-$('#emotes').innerHTML = EMOTES.map((e) => `<button class="em" data-e="${e}">${e}</button>`).join('');
-$('#emotes').querySelectorAll('.em').forEach((b) => (b.onclick = () => { $('#emotes').hidden = true; doEmote(b.dataset.e); }));
+// emotikon dasar + stiker yang dibeli di Toko Stiker Pulau Kota
+function buildEmotes() {
+  $('#emotes').innerHTML = [...EMOTES, ...(save.emotes || [])].map((e) => `<button class="em" data-e="${e}">${e}</button>`).join('');
+  $('#emotes').querySelectorAll('.em').forEach((b) => (b.onclick = () => { $('#emotes').hidden = true; doEmote(b.dataset.e); }));
+}
+buildEmotes();
 $('#micBtn').onclick = async () => {
   SFX.tap(); const b = $('#micBtn');
   if (!dev.chat) { toast('Obrolan suara dimatikan di menu Orang Tua'); return; }
@@ -4134,17 +4655,18 @@ let playing = false;
 let hinted = false;
 function portraitHint() {
   if (hinted || !playing) return;
-  if (window.innerWidth < window.innerHeight && window.innerWidth < 600) { hinted = true; toast('Putar HP ke samping agar layar lebih luas'); }
+  /* tidak lagi menyuruh memutar HP: posisi tegak juga boleh */
 }
 $('#playBtn').onclick = () => {
-  ac(); SFX.good();
+  ac(); SFX.good(); if (IS_MOBILE) goFullscreen();
   playing = true; $('#start').hidden = true; $('#hud').hidden = false; camMode = 'follow';
-  checkTime(); setTimeout(portraitHint, 4000);
+  checkTime(); if (!IS_MOBILE) setTimeout(portraitHint, 4000);
+  const resumed = resumeCheckpoint();
   if (modal === 'rest') return;
   if (!save.greeted) {
-    say(`${greeting()} Halo, ${playerName}! Aku Kak Rara. Misi kita: kumpulkan poin sebanyak-banyaknya di tempat bermain mana pun yang kamu suka, dan jadilah juara satu! Sentuh dan geser di layar kiri untuk berjalan. Sampai di tempat bermain, ketuk tombol Masuk. Malam hari ada zombie, jadi kumpulkan koin untuk senjata dan nyawa, ya!`);
+    say(`Halo, ${playerName}! Aku Kak Rara. Geser layar kiri untuk jalan, lalu cari tempat bermain dan ketuk Masuk. Ayo, kita kumpulkan bintang!`);
     save.greeted = true; persist();
-  } else say(`${greeting()} Senang ketemu kamu lagi, ${playerName}! ${pick(RARA_TIPS)}`);
+  } else say(pick([`Halo lagi, ${playerName}! Ayo main!`, `Hai, ${playerName}! Kangen, deh. Yuk main!`, `${greeting()} ${playerName}! Siap main?`]));
   updateMission();
 };
 
@@ -4178,8 +4700,9 @@ function onLand(ev) {
   else if (ev.fall > 1.4) tone(150, 0.1, { type: 'triangle', vol: 0.07 });
 }
 function fellInSea() {
-  const [x, z] = W.ship.pierStart; teleport(x, z, 0.21);
-  say('Byur! Kamu tercebur ke laut. Untung bisa berenang ke dermaga. Hati-hati, ya!', { force: true });
+  const city = W.islandOf(player.pos.x, player.pos.z) === 'kota';
+  const [x, z] = city ? KOTA.CITY_PLACES.pelabuhan.go : W.ship.pierStart; teleport(x, z, city ? 0 : 0.21);
+  say('Byur! Hati-hati, ya!', { force: true });
 }
 // jatuh dari menara: nyawa berkurang satu, mulai lagi dari lantai aman terakhir
 function towerFall() {
@@ -4188,7 +4711,7 @@ function towerFall() {
     const f = W.tower.floors[climb.cp] || W.tower.floors[0];
     if (climb.cp > 0 || player.y > 1) teleport(T.x + (f.L % 2 ? -2.6 : 2.6), T.z, f.y);
     tone(300, 0.2, { type: 'triangle', slide: 0.7, vol: 0.06 });
-    say(`Uups, jatuh! Tidak apa-apa, nyawamu aman. ${f.L ? `Coba lagi dari Lantai ${f.L}` : 'Coba lagi'}, ya!`, { force: true });
+    say('Uups, jatuh! Ayo coba lagi!', { force: true });
     return;
   }
   save.hp = Math.max(0, (save.hp ?? 3) - 1); persist(); updateVitals();
@@ -4197,7 +4720,7 @@ function towerFall() {
   if (save.hp <= 0) { climb.cp = 0; climb.ready = false; teleport(T.x + T.fence + 3, T.z + 2, 0); goDown(); return; }
   const f = W.tower.floors[climb.cp] || W.tower.floors[0];
   teleport(T.x + (f.L % 2 ? -2.6 : 2.6), T.z, f.y);
-  say(`Aduh, jatuh! Nyawa berkurang satu. ${f.L ? `Coba lagi dari Lantai ${f.L}` : 'Coba lagi dari bawah'}, ya. Kamu pasti bisa!`, { force: true });
+  say('Aduh, jatuh! Ayo coba lagi, kamu pasti bisa!', { force: true });
 }
 function knockBack([hx, hz]) {
   const T = W.TOWER; let ox = player.pos.x - T.x, oz = player.pos.z - T.z; const od = Math.hypot(ox, oz) || 1; ox /= od; oz /= od;
@@ -4225,7 +4748,7 @@ async function summit() {
   const rt = $('#rewardText'); rt.textContent = 'Kamu hebat dan pantang menyerah! Hadiahmu:';
   for (const g of got) { const b = document.createElement('b'); b.style.display = 'block'; b.style.fontSize = '22px'; b.textContent = g; rt.appendChild(b); }
   openModal('reward');
-  say(`Selamat! Kamu sampai di puncak Menara Langit! Kamu hebat dan pantang menyerah. Hadiahmu: ${got.map((g) => g.replace(/^\S+\s/, '')).join(', ')}! Untuk turun, injak lingkaran biru.`, { stay: true, force: true });
+  say(`Yeay, sampai puncak! Hebat, kamu pantang menyerah! Hadiahmu: ${got.map((g) => g.replace(/^\S+\s/, '')).join(', ')}!`, { stay: true, force: true });
   await new Promise((res) => { $('#rewardOk').onclick = () => { closeModal('reward'); res(); }; });
 }
 function towerChip(dT) {
@@ -4236,9 +4759,14 @@ function towerChip(dT) {
 }
 // malam: bangunan, menara, gunung, laut & bandara ditutup. Satu-satunya tempat aman = lingkaran zona aman.
 function nightRules(dt, night) {
+  if (night && show.on) endShow(true);
+  if (night && care.on) endCare(true);
+  if (night && myBalloon) releaseBalloon();
   if (!night || me.down) return;
   if (veh.kind === 'jetski' || veh.kind === 'plane') { endRide('night'); return; }
-  if (ride && ride.kind !== 'atv') { leaveRide(true, true); return; }
+  if (ride && ride.kind !== 'atv' && ride.kind !== 'car') { leaveRide(true, true); return; }
+  if (transit) { const q = KOTA.transitPose(transit.tok); const s = q.exit || [...Object.values(KOTA.CITY_PLACES)].sort((a, b) => Math.hypot(a.go[0] - player.pos.x, a.go[1] - player.pos.z) - Math.hypot(b.go[0] - player.pos.x, b.go[1] - player.pos.z))[0];
+    const spot = q.exit || { x: s.go[0], z: s.go[1], y: 0, name: s.name }; if (transit.tok.id === 'ferry' && !q.exit) { const f = KOTA.FERRY.sides[transit.tok.from]; exitTransit({ x: f.wait[0], z: f.wait[1], y: f.wait[2], name: f.name }, true); } else exitTransit(spot, true); return; }
   if (ride || performance.now() - (climb.kickAt || 0) < 1200) return;
   const T = W.TOWER, x = player.pos.x, z = player.pos.z;
   const inside = Math.hypot(x - T.x, z - T.z) < T.fence + 0.5 || W.inBuilding(x, z) || (player.onGround && player.y > 1.0) || swimming() || W.onShip(player);
@@ -4246,9 +4774,9 @@ function nightRules(dt, night) {
   climb.kickAt = performance.now(); climb.cp = 0;
   const sea = swimming() || W.onShip(player);
   let best = null, bd = 1e9;
-  for (const p of Object.values(W.PLACES)) { if (sea && p !== W.PLACES.kapal) continue; const d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; best = p; } }
+  for (const p of [...Object.values(W.PLACES), ...Object.values(KOTA.CITY_PLACES)]) { if (sea && p !== W.PLACES.kapal) continue; const d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; best = p; } }
   if (best) teleport(best.go[0], best.go[1], 0);
-  if (!climb.nightSaid || performance.now() - climb.nightSaid > 20000) { climb.nightSaid = performance.now(); say('Malam tiba! Bangunan, menara, dan laut ditutup. Tempat aman hanya di lingkaran zona aman yang hijau. Ayo ke sana!', { force: true }); }
+  if (!climb.nightSaid || performance.now() - climb.nightSaid > 20000) { climb.nightSaid = performance.now(); say('Malam tiba! Ayo ke zona hijau!', { force: true }); }
 }
 function rideLift() {
   const price = W.LIFT.price;
@@ -4257,7 +4785,7 @@ function rideLift() {
   save.coins -= price; persist(); updateVitals(); floatText(`-${price} 🪙`); hideAction(); climb.liftBtn = false;
   climb.ready = false; // hadiah puncak hanya untuk yang mendaki
   tone(523, 0.15, { type: 'triangle', vol: 0.08 }); tone(784, 0.2, { type: 'triangle', vol: 0.08, delay: 0.15 });
-  say('Pintu ditutup. Lift naik ke puncak! Pegangan, ya!', { force: true });
+  say('Lift naik! Pegangan, ya!', { force: true });
 }
 function horn() { tone(196, 0.7, { type: 'sawtooth', vol: 0.04 }); tone(147, 0.9, { type: 'sawtooth', vol: 0.04, delay: 0.75 }); }
 function worldPlay(dt) {
@@ -4272,7 +4800,7 @@ function worldPlay(dt) {
   const dT = Math.hypot(player.pos.x - T.x, player.pos.z - T.z);
   climb.warnT -= dt;
   if (shut && dT > T.fence - 0.5 && dT < T.fence + 3 && Math.abs(Math.atan2(player.pos.z - T.z, player.pos.x - T.x)) < 0.35 && climb.warnT <= 0) {
-    climb.warnT = 9; if (nightD) say('Menara ditutup saat malam. Cari lingkaran zona aman yang hijau, ya!', { force: true }); else say('Gerbang menara tertutup karena nyawamu habis. Belajar dulu di tempat bermain supaya dapat nyawa, lalu kembali ke sini, ya!', { force: true });
+    climb.warnT = 9; if (nightD) say('Menaranya tutup kalau malam, ya!', { force: true }); else say('Nyawamu habis. Main satu permainan dulu, ya!', { force: true });
   }
   if (dT < T.fence + 0.5) {
     if (player.onGround) for (const f of W.tower.floors) {
@@ -4287,7 +4815,7 @@ function worldPlay(dt) {
     }
     const d = W.tower.down;
     if (d && !modal && Math.abs(player.y - d.y) < 0.3 && Math.hypot(player.pos.x - d.x, player.pos.z - d.z) < 1.1) {
-      climb.cp = 0; teleport(T.x + T.fence + 3, T.z + 2, 0); say('Wuss! Kamu sudah turun. Mau naik lagi? Masuk lewat gerbang, ya!');
+      climb.cp = 0; teleport(T.x + T.fence + 3, T.z + 2, 0); toast('⬇️ Sudah di bawah');
     }
   } else if (player.y < 1) climb.cp = 0;
   towerChip(dT);
@@ -4297,7 +4825,24 @@ function worldPlay(dt) {
   if (rk !== (climb.rentBtn ?? null)) {
     climb.rentBtn = rk;
     if (rk) { const r = W.RENT[rk]; showAction(`${r.emoji} Sewa ${r.name} · 🪙 ${r.price} · ${r.min} menit`, () => rent(rk)); }
-    else if (!activeZone && !veh.kind && !ride && !climb.liftBtn && !climb.joinBtn) hideAction();
+    else if (!activeZone && !veh.kind && !ride && !climb.liftBtn && !climb.joinBtn && !climb.transitBtn && !climb.actBtn) hideAction();
+  }
+  // Pulau Kota: naik bus/kapal/wahana & loket kegiatan
+  const free = !veh.kind && !ride && !transit && !care.on && !modal && !me.down;
+  const tn = free ? KOTA.transitNear(player.pos.x, player.pos.z, player.y) : null, tkey = tn ? tn.label + (tn.wait ? ':w' : '') : null;
+  if (tkey !== (climb.transitBtn ?? null)) {
+    climb.transitBtn = tkey;
+    if (tn && !tn.wait) showAction(tn.label, boardTransit);
+    else if (!activeZone && !veh.kind && !ride && !transit && !climb.rentBtn && !climb.liftBtn && !climb.actBtn) hideAction();
+  }
+  if (tn && tn.wait) { const el = $('#vehChip'); el.hidden = false; const sec = Number.isFinite(tn.left) ? `±${Math.max(1, Math.ceil(tn.left))} detik` : 'sebentar lagi';
+    el.textContent = tn.id === 'bus' ? `${tn.label} · bus datang ${sec}` : tn.id === 'train' ? `${tn.label} · kereta datang ${sec}` : tn.id === 'coaster' ? `🎢 Roller coaster tiba ${sec}` : tn.id === 'kora' ? `🏴‍☠️ Kora-kora berhenti ${sec}` : `⛴️ Kapal datang ${sec}`; climb.waitChip = true; }
+  else if (climb.waitChip) { climb.waitChip = false; if (!veh.kind && !transit) $('#vehChip').hidden = true; }
+  const ak = free ? KOTA.activityNear(player.pos.x, player.pos.z, player.y) : null;
+  if (ak !== (climb.actBtn ?? null)) {
+    climb.actBtn = ak;
+    if (ak) showAction(actLabel(ak), () => doActivity(ak));
+    else if (!activeZone && !veh.kind && !ride && !transit && !climb.rentBtn && !climb.liftBtn && !climb.transitBtn) hideAction();
   }
   // ikut naik kendaraan teman
   const dr = modal ? null : nearDriver(), jid = dr ? dr.id : null;
@@ -4308,7 +4853,7 @@ function worldPlay(dt) {
   }
   // lift ke puncak: bayar koin
   const wantLift = W.onLift(player) && W.LIFT.state === 'idle' && !modal && !nightD;
-  if (wantLift !== !!climb.liftBtn) { climb.liftBtn = wantLift; if (wantLift) { showAction(`🛗 Naik ke puncak · 🪙 ${W.LIFT.price}`, rideLift); say(`Mau naik lift ke puncak? Harganya ${W.LIFT.price} koin. Ketuk tombolnya!`); } else if (!activeZone) hideAction(); }
+  if (wantLift !== !!climb.liftBtn) { climb.liftBtn = wantLift; if (wantLift) { showAction(`🛗 Naik ke puncak · 🪙 ${W.LIFT.price}`, rideLift); } else if (!activeZone) hideAction(); }
   // rintangan menara mendorong pemain (bisa membuat jatuh)
   me.knockCd = Math.max(0, (me.knockCd || 0) - dt);
   if (me.knockCd <= 0 && !me.down && !modal) { const hit = W.hazardHit(player.pos.x, player.y, player.pos.z); if (hit) knockBack(hit); }
@@ -4316,7 +4861,7 @@ function worldPlay(dt) {
   const M = W.MOUNT;
   if (!climb.peakDone && player.onGround && player.y > M.top - 0.1 && Math.hypot(player.pos.x - M.x, player.pos.z - M.z) < M.half + 1) {
     climb.peakDone = true; celebrate('small', 'PUNCAK!'); SFX.good();
-    say('Hore! Kamu sampai di puncak gunung! Lihat, seluruh pulau kelihatan dari sini. Dingin, ada salju!');
+    say('Horee, puncak gunung! Brrr, ada salju!');
   } else if (climb.peakDone && player.y < 2) climb.peakDone = false;
   // pengumuman kapal untuk yang ada di dekat dermaga / di atas kapal
   const S = W.ship, K2 = W.PLACES.kapal;
@@ -4334,12 +4879,12 @@ function worldPlay(dt) {
 /* ---------- kendaraan sewaan: ATV (darat) & jetski (laut) ---------- */
 const veh = { kind: null, until: 0, v: 0, yaw: 0, mesh: null, warned: false, spray: 0, ending: false, pass: new Map(), fl: null, climb: 0, bank: 0 };
 // kode pose/kendaraan yang dikirim ke teman: 4 ATV, 5 jetski, 8 pesawat (pengemudi); 6/7/9 = penumpangnya
-const VEH_P = { atv: 4, jetski: 5, plane: 8 }, PASS_P = { atv: 6, jetski: 7, plane: 9 }, P_KIND = { 4: 'atv', 5: 'jetski', 8: 'plane', 6: 'atv', 7: 'jetski', 9: 'plane' };
-const VEH_OFF = { 4: 0.18, 5: -1.0, 8: 0, 6: 0.3, 7: -0.9, 9: 0 }, VEH_MESH_Y = { 4: -0.18, 5: 0.4, 8: 0 }, VEH_MESH_Z = { 4: 0, 5: 0, 8: -1.2 };
-const SEAT_BACK = { atv: 0.75, jetski: 0.8, plane: 1.0 };
-const SEATS = { atv: 1, jetski: 1, plane: 3 }; // jumlah penumpang (selain pengemudi): ATV & jetski 2 orang, pesawat 4 orang
-const makeVehMesh = (code) => (code === 4 ? W.makeATV() : code === 5 ? W.makeJetski() : W.makePlane());
-const vehCode = () => (veh.kind ? VEH_P[veh.kind] : ride ? PASS_P[ride.kind] : 0);
+const VEH_P = { atv: 4, jetski: 5, plane: 8, car: 11, kart: 13, bumper: 14 }, PASS_P = { atv: 6, jetski: 7, plane: 9, car: 12 }, P_KIND = { 4: 'atv', 5: 'jetski', 8: 'plane', 6: 'atv', 7: 'jetski', 9: 'plane', 11: 'car', 12: 'car', 13: 'kart', 14: 'bumper' };
+const VEH_OFF = { 4: 0.18, 5: -1.0, 8: 0, 6: 0.3, 7: -0.9, 9: 0, 10: 0, 11: 0.05, 12: 0.05, 13: -0.25, 14: -0.35 }, VEH_MESH_Y = { 4: -0.18, 5: 0.4, 8: 0, 11: -0.05, 13: 0.25, 14: 0.35 }, VEH_MESH_Z = { 4: 0, 5: 0, 8: -1.2, 11: 0.3, 13: 0.2, 14: 0.3 };
+const SEAT_BACK = { atv: 0.75, jetski: 0.8, plane: 1.0, car: 1.1 };
+const SEATS = { atv: 1, jetski: 1, plane: 3, car: 3, kart: 0, bumper: 0 }; // jumlah penumpang (selain pengemudi): ATV & jetski 2 orang, pesawat 4 orang
+const makeVehMesh = (code) => (code === 4 ? W.makeATV() : code === 5 ? W.makeJetski() : code === 11 ? KOTA.makeCar('#ff8a2a') : code === 13 ? KOTA.makeKart() : code === 14 ? KOTA.makeBumper('#e8434b') : W.makePlane());
+const vehCode = () => (veh.kind ? VEH_P[veh.kind] : ride ? PASS_P[ride.kind] : transit ? 10 : 0);
 let ride = null; // menumpang kendaraan teman: { driver, kind }
 function nearRental() {
   if (veh.kind || ride) return null;
@@ -4348,7 +4893,7 @@ function nearRental() {
 }
 function rent(kind) {
   const r = W.RENT[kind];
-  if (kind !== 'atv' && nightDanger()) { SFX.soft(); say(`Penyewaan ${r.name} tutup saat malam. Buka lagi besok pagi, ya!`, { force: true }); return; }
+  if (kind !== 'atv' && kind !== 'car' && nightDanger()) { SFX.soft(); say(`Penyewaan ${r.name} tutup saat malam. Buka lagi besok pagi, ya!`, { force: true }); return; }
   if ((save.coins || 0) < r.price) { SFX.soft(); say(`Koinmu belum cukup. Sewa ${r.name} perlu ${r.price} koin. Tukar bintang jadi koin di Toko, ya!`, { force: true }); return; }
   save.coins -= r.price; persist(); updateVitals(); floatText(`-${r.price} 🪙`); hideAction(); climb.rentBtn = null;
   if (kind === 'jetski') { const [x, z] = r.water; teleport(x, z, -0.35); }
@@ -4358,22 +4903,22 @@ function rent(kind) {
   const code = VEH_P[kind]; veh.mesh = makeVehMesh(code); veh.mesh.position.set(0, VEH_MESH_Y[code], VEH_MESH_Z[code]); player.ch.root.add(veh.mesh);
   player.facing = veh.yaw; view.yaw = veh.yaw + Math.PI;
   tone(110, 0.4, { type: 'sawtooth', slide: 1.8, vol: 0.05 });
-  if (kind === 'plane') { showAction('🛫 Terbang!', takeoff); say('Selamat datang di pesawat! Teman boleh ikut naik dulu. Kalau sudah siap, ketuk tombol Terbang!', { force: true }); }
-  else { showAction('⏹️ Selesai', () => endRide('done')); say(kind === 'atv' ? 'Brum brum! Joystick ke depan untuk jalan, ke kiri dan kanan untuk belok. Teman bisa ikut naik di belakang!' : 'Wuuush! Jetski siap! Kelilingi pulau lewat laut. Jangan masuk area berenang, ya!', { force: true }); }
+  if (kind === 'plane') { showAction('🛫 Terbang!', takeoff); say('Siap terbang? Ketuk Terbang!', { force: true }); }
+  else { showAction('⏹️ Selesai', () => endRide('done')); say(kind === 'car' ? 'Brum brum! Ayo jalan!' : kind === 'atv' ? 'Brum brum! Ayo jalan!' : 'Wuuush! Ayo ngebut di laut!', { force: true }); }
 }
 function takeoff() {
   if (veh.kind !== 'plane' || veh.fl.phase !== 'ready') return;
   veh.fl.phase = 'roll'; showAction('🛬 Mendarat', () => endRide('done'));
-  tone(90, 1.2, { type: 'sawtooth', slide: 2.5, vol: 0.05 }); say('Lepas landas! Joystick kiri dan kanan untuk belok, ke atas untuk naik, ke bawah untuk turun.', { force: true });
+  tone(90, 1.2, { type: 'sawtooth', slide: 2.5, vol: 0.05 }); say('Lepas landas! Wuuush!', { force: true });
 }
 function endRide(reason) {
   if (!veh.kind) return; const r = W.RENT[veh.kind], k = veh.kind;
   for (const id of veh.pass.keys()) send({ t: 'rideEnd', to: id }); veh.pass.clear();
   veh.kind = null; veh.v = 0; veh.fl = null; if (veh.mesh) player.ch.root.remove(veh.mesh); veh.mesh = null; hideAction(); $('#vehChip').hidden = true;
   if ((k === 'jetski' || k === 'plane') && reason !== 'map') { veh.ending = true; const [x, z] = r.back; teleport(x, z, k === 'plane' ? r.top : 0.12); veh.ending = false; }
-  if (reason === 'night') say(`Malam tiba! ${r.name} harus kembali. Cari lingkaran zona aman, ya!`, { force: true });
-  else if (reason === 'time') say(k === 'plane' ? 'Waktu terbang habis. Pesawat sudah mendarat dengan selamat di bandara!' : `Waktu sewa ${r.name} habis. Terima kasih sudah menyewa! Mau lagi? Sewa lagi di tempat penyewaan, ya.`, { force: true });
-  else if (reason === 'done') say(k === 'plane' ? 'Pesawat mendarat dengan selamat. Terima kasih sudah terbang!' : `Terima kasih sudah naik ${r.name}!`, { force: true });
+  if (reason === 'night') say('Malam tiba! Ayo ke zona hijau!', { force: true });
+  else if (reason === 'time') say(k === 'plane' ? 'Waktunya habis. Mendarat dengan selamat!' : 'Waktunya habis! Seru, kan?', { force: true });
+  else if (reason === 'done') toast(k === 'plane' ? '🛬 Mendarat' : `✅ Selesai naik ${r.name}`);
 }
 function steerCam(dt) { if (look.id === null && !view.dragging) { let d = veh.yaw + Math.PI - view.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); view.yaw += d * Math.min(1, dt * 2.5); } }
 // pesawat: siap -> melaju di landasan -> terbang (tidak bisa jatuh atau menabrak)
@@ -4393,8 +4938,8 @@ function planeTick(dt, sx, sy) {
     const td = Math.hypot(player.pos.x - T.x, player.pos.z - T.z);
     if (td < 20 && player.y < T.N * T.H + 8) { const k = 20 / (td || 1); player.pos.x = T.x + (player.pos.x - T.x) * k; player.pos.z = T.z + (player.pos.z - T.z) * k; }
     // jangan terlalu jauh: belok pelan kembali ke pulau
-    const pd = Math.hypot(player.pos.x, player.pos.z);
-    if (pd > 165) { const toC = Math.atan2(-player.pos.x, -player.pos.z); let d = toC - veh.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); veh.yaw += d * Math.min(1, dt * 1.2); }
+    const d1 = Math.hypot(player.pos.x, player.pos.z), d2 = Math.hypot(player.pos.x - W.CITY.x, player.pos.z - W.CITY.z), home = d1 < d2 ? [0, 0] : [W.CITY.x, W.CITY.z];
+    if (Math.min(d1, d2) > 165) { const toC = Math.atan2(home[0] - player.pos.x, home[1] - player.pos.z); let d = toC - veh.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); veh.yaw += d * Math.min(1, dt * 1.2); }
   }
   player.pos.x += Math.sin(veh.yaw) * veh.v * dt; player.pos.z += Math.cos(veh.yaw) * veh.v * dt;
   if (veh.mesh) { veh.mesh.rotation.z = -veh.bank; veh.mesh.rotation.x = -veh.climb * 0.03; veh.mesh.userData.prop.rotation.z += dt * 30; }
@@ -4402,7 +4947,7 @@ function planeTick(dt, sx, sy) {
 function vehicleTick(dt, sx, sy) {
   player.facing = veh.yaw; player.target = null; marker.visible = false;
   if (veh.kind === 'plane') { planeTick(dt, sx, sy); player.facing = veh.yaw; steerCam(dt); return; }
-  const jet = veh.kind === 'jetski', throttle = clamp(-sy, -1, 1), steer = clamp(sx, -1, 1), max = jet ? 15 : 12;
+  const jet = veh.kind === 'jetski', throttle = clamp(-sy, -1, 1), steer = clamp(sx, -1, 1), max = jet ? 15 : veh.kind === 'kart' ? 17 : veh.kind === 'bumper' ? 6 : 12;
   const want = throttle >= 0 ? throttle * max : throttle * 5;
   veh.v += (want - veh.v) * Math.min(1, dt * (throttle ? 1.5 : 0.9));
   veh.yaw -= steer * 1.9 * dt * clamp(veh.v / 4, -1, 1);
@@ -4410,6 +4955,7 @@ function vehicleTick(dt, sx, sy) {
   player.facing = veh.yaw;
   W.pushOut(player.pos, player.y, 0.9);
   const pd = Math.hypot(player.pos.x, player.pos.z), e = edgeR(player.pos.x, player.pos.z);
+  if (!jet && !W.onLand(player.pos.x, player.pos.z, 2.2) && !W.supported(player.pos.x, player.pos.z, player.y)) { W.clampLand(player.pos, 2.2); veh.v *= 0.5; }
   if (jet) {
     // jetski hanya di laut: tidak naik ke pantai, tidak terlalu jauh, tidak masuk area berenang
     const lo = e + 1.5, hi = e + 22; if (pd < lo || pd > hi) { const k = clamp(pd, lo, hi) / pd; player.pos.x *= k; player.pos.z *= k; veh.v *= 0.6; }
@@ -4418,16 +4964,16 @@ function vehicleTick(dt, sx, sy) {
     if (Math.abs(veh.v) > 3 && (veh.spray -= dt) <= 0) { veh.spray = 0.15; burst(new THREE.Vector3(player.pos.x - Math.sin(veh.yaw) * 1.4, -0.6, player.pos.z - Math.cos(veh.yaw) * 1.4), ['#ffffff', '#bfe8ff']); }
   } else {
     pushTrees(player.pos, 1.0);
-    const lim = e - 2.2; if (pd > lim && !W.supported(player.pos.x, player.pos.z, player.y)) { player.pos.x *= lim / pd; player.pos.z *= lim / pd; veh.v *= 0.5; }
     // ATV tidak boleh masuk menara
     const T = W.TOWER, tx = player.pos.x - T.x, tz = player.pos.z - T.z, td = Math.hypot(tx, tz);
     if (td < T.fence + 1.2) { player.pos.x = T.x + (tx / td) * (T.fence + 1.2); player.pos.z = T.z + (tz / td) * (T.fence + 1.2); veh.v *= 0.4; }
     if (player.onGround && Math.abs(veh.v) > 1 && W.ledgeAhead(player.pos.x, player.pos.z, player.y, Math.sin(veh.yaw) * Math.sign(veh.v), Math.cos(veh.yaw) * Math.sign(veh.v)) !== null) player.jumpBuf = 0.05;
   }
+  if (veh.kind === 'bumper') { const B = KOTA.BUMPER; player.pos.x = clamp(player.pos.x, B.cx - B.hx + 0.9, B.cx + B.hx - 0.9); player.pos.z = clamp(player.pos.z, B.cz - B.hz + 0.9, B.cz + B.hz - 0.9); }
   if (Math.abs(veh.v) > 1) steerCam(dt);
 }
 function vehicleClock() {
-  if (!veh.kind) return;
+  if (!veh.kind || race.on) return;
   const left = Math.max(0, veh.until - Date.now()), r = W.RENT[veh.kind];
   const el = $('#vehChip'); el.hidden = false; el.textContent = `${r.emoji} ${r.name}${veh.pass.size ? ` · 👥 ${veh.pass.size + 1}` : ''} · ⏱️ ${mmss(left)}`;
   if (left < 30000 && !veh.warned) { veh.warned = true; toast(`⏱️ Waktu sewa ${r.name} tinggal 30 detik`); }
@@ -4437,7 +4983,7 @@ function vehicleClock() {
 function nearDriver() {
   if (veh.kind || ride || me.down || activeZone) return null;
   for (const r of remotes.values()) {
-    const t = r.target, c = t.p; if (!(c === 4 || c === 5 || c === 8) || (t.pc || 0) >= SEATS[P_KIND[c]]) continue;
+    const t = r.target, c = t.p; if (!(c === 4 || c === 5 || c === 8 || c === 11) || (t.pc || 0) >= SEATS[P_KIND[c]]) continue;
     const p = r.ch.root.position, d = Math.hypot(p.x - player.pos.x, p.z - player.pos.z);
     // jetski: boleh naik dari pantai tempat sewa (jetski menunggu di dekatnya); pesawat: hanya saat masih di landasan
     const range = c === 5 ? 14 : 3.6; if (d > range || (c !== 5 && Math.abs((t.y || 0) - player.y) > 1.6)) continue;
@@ -4456,22 +5002,642 @@ function onRideReq(m) {
 function startRide(m) {
   const r = remotes.get(m.from); if (!r || veh.kind) return;
   ride = { driver: m.from, kind: m.kind, seat: m.seat || 0 }; climb.joinBtn = null; hideAction(); showAction('⏹️ Turun', () => leaveRide(true));
-  SFX.good(); say(`Kamu ikut naik ${W.RENT[m.kind].name} bersama ${r.name}. Pegangan, ya!`, { force: true });
+  SFX.good(); toast(`🙌 Ikut ${r.name}`);
 }
 function leaveRide(tell, quiet = false) {
-  if (!ride) return; const k = ride.kind, d = ride.driver; ride = null; hideAction();
+  if (!ride) return; const k = ride.kind, d = ride.driver; ride = null; hideAction(); climb.transitBtn = climb.actBtn = climb.rentBtn = null; // tombol di tempat turun muncul lagi
   if (tell) send({ t: 'rideOff', to: d });
   if (k === 'jetski' || k === 'plane') { const r = W.RENT[k]; veh.ending = true; teleport(r.back[0], r.back[1], k === 'plane' ? r.top : 0.12); veh.ending = false; }
   else { player.vy = 0; player.onGround = false; player.peak = player.y; }
-  if (!quiet) say('Kamu sudah turun. Terima kasih sudah ikut!', { force: true });
+  if (!quiet) toast('✅ Sudah turun');
 }
 // penumpang duduk di belakang pengemudi, mengikuti posisinya
 function rideTick() {
   if (!ride) return; const r = remotes.get(ride.driver);
-  if (!r || ![4, 5, 8].includes(r.target.p)) { leaveRide(false); return; }
+  if (!r || ![4, 5, 8, 11].includes(r.target.p)) { leaveRide(false); return; }
   const p = r.ch.root.position, f = r.ch.root.rotation.y, back = SEAT_BACK[ride.kind] + (ride.seat || 0) * 0.8;
   player.pos.x = p.x - Math.sin(f) * back; player.pos.z = p.z - Math.cos(f) * back; player.y = r.target.y || 0;
   player.vy = 0; player.onGround = ride.kind !== 'plane'; player.standOn = null; player.peak = player.y; player.facing = f; player.target = null;
+}
+
+/* ---------- Pulau Kota: bus, kapal ferry, bianglala, komidi putar (duduk = kode 10) ---------- */
+let transit = null; // { tok }
+function boardTransit() {
+  const info = KOTA.transitNear(player.pos.x, player.pos.z, player.y);
+  if (!info || info.wait) { toast('Kendaraannya sudah pergi. Tunggu yang berikutnya, ya!'); return; }
+  if (nightDanger()) { SFX.soft(); say('Wahananya tutup kalau malam. Ayo ke zona hijau!', { force: true }); return; }
+  let taken = [];
+  if (info.id === 'coaster') taken = [0, 1, 2, 3, 4, 5].filter((k) => { const q = KOTA.coasterSeat(k); return [...remotes.values()].some((r) => r.target.p === 10 && Math.hypot(r.ch.root.position.x - q.x, r.ch.root.position.z - q.z) < 0.8 && Math.abs(r.ch.root.position.y - q.y) < 1.5); });
+  const tok = KOTA.boardTransit(info, taken);
+  if (!tok) { SFX.soft(); say('Penuh! Tunggu putaran berikutnya, ya.', { force: true }); return; }
+  if (!payCoins(info.price)) return;
+  transit = { tok }; climb.transitBtn = null; climb.transitExit = null; hideAction(); player.target = null; marker.visible = false;
+  tone(523, 0.15, { type: 'triangle', vol: 0.08 }); tone(659, 0.2, { type: 'triangle', vol: 0.08, delay: 0.12 });
+  const BOARD = { coaster: 'Pegangan yang erat! Ada putaran terbalik, lho!', train: 'Tuut tuut!', zip: 'Siap? Satu, dua, tiga... wuuush!' };
+  if (BOARD[info.id]) say(BOARD[info.id], { force: true });
+}
+function exitTransit(spot, quiet = false) {
+  if (!transit) return; transit = null; climb.transitExit = null; hideAction(); $('#vehChip').hidden = true;
+  if (spot) { veh.ending = true; teleport(spot.x, spot.z, spot.y); veh.ending = false; if (!quiet) toast(`📍 ${spot.name}`); }
+}
+function transitTick() {
+  if (!transit) return;
+  const p = KOTA.transitPose(transit.tok);
+  player.pos.x = p.x; player.pos.z = p.z; player.y = p.y; player.vy = 0; player.onGround = true; player.standOn = null; player.peak = p.y; player.facing = p.yaw; player.target = null;
+  const el = $('#vehChip'); el.hidden = false; el.textContent = p.info; transit.pose = p;
+  if (p.cam && look.id === null && !view.dragging) { let d = p.yaw + Math.PI - view.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); view.yaw += d * 0.08; }
+  if (transit.tok.id === 'train') { if (p.moving && !transit.go) { transit.go = true; tone(392, 0.5, { type: 'square', vol: 0.05 }); tone(330, 0.7, { type: 'square', vol: 0.05, delay: 0.5 }); } else if (!p.moving) transit.go = false; }
+  if (transit.tok.id === 'coaster' && p.loop && !transit.looped) { transit.looped = true; toast('🔄 Putaraaan! Kita terbalik!'); tone(500, 1.2, { type: 'sawtooth', slide: 1.8, vol: 0.04 }); } else if (transit.tok.id === 'coaster' && !p.loop) transit.looped = false;
+  if (transit.tok.id === 'coaster') { if (p.pitch < -0.35 && !transit.drop) { transit.drop = true; toast(pick(['😱 Wuaaaa!', '🎢 Turunan curam!', '😆 Wiiiii!'])); tone(700, 0.8, { type: 'sawtooth', slide: 0.4, vol: 0.04 }); } else if (p.pitch > -0.1) transit.drop = false; }
+  if (transit.tok.id === 'zip' && p.v > 2 && (transit.windT = (transit.windT || 0) - 1 / 60) <= 0) { transit.windT = 0.3; tone(140 + p.v * 22, 0.32, { type: 'triangle', vol: 0.018 + p.v * 0.002 }); }
+  if (p.auto && p.exit) { exitTransit(p.exit); return; }
+  const key = (transit.tok.id === 'bus' || transit.tok.id === 'train') && p.exit ? p.exit.name : '';
+  if (key !== climb.transitExit) { climb.transitExit = key; if (key) showAction(`${transit.tok.id === 'train' ? '🚉' : '🚏'} Turun di ${key}`, () => { const q = transit && KOTA.transitPose(transit.tok); if (q?.exit) exitTransit(q.exit); }); else hideAction(); }
+}
+function payCoins(n) {
+  if (n <= 0) return true;
+  if ((save.coins || 0) < n) { SFX.soft(); say(W.islandOf(player.pos.x, player.pos.z) === 'kota' ? `Yah, koinnya kurang. Perlu ${n} koin. Jawab soal dari warga kota: kasir, polantas, perpustakaan, lapak buah, atau papan kebun binatang!` : `Yah, koinnya kurang. Perlu ${n} koin. Ayo main di Pulau Balok dulu!`, { force: true }); return false; }
+  save.coins -= n; persist(); updateVitals(); floatText(`-${n} 🪙`); return true;
+}
+const ACT_LABEL = { theater: '🎭 Pilih cerita · 🪙 3', bumper: `🚗 Main bom-bom car · 🪙 ${KOTA.BUMPER.price}`, claw: '🕹️ Main mesin capit · 🪙 1', foodcourt: '🍲 Pesan makanan · 🪙 5', zoo: '🥕 Beri makan hewan · 🪙 1', toys: '🧸 Lihat stiker · 🪙 4', race: `🏎️ Ikut lomba balap · 🪙 ${KOTA.RACE.price}`, hats: '🛍️ Lihat topi', food: '🍔 Pesan makanan · 🪙 5', clinic: '🏥 Berobat ke rumah sakit', books: '📖 Baca buku · gratis', photo: '📸 Foto di sini · gratis', lift: '🛗 Lift · pilih lantai', birds: '🌾 Beri makan merpati · gratis', sky: '🛗 Naik ke dek pandang · 🪙 3', skydown: '⬇️ Turun dari menara', icecream: '🍦 Beli es krim · 🪙 1' };
+const actLabel = (k) => { if (k.startsWith('shop:')) return KOTA.SHOPS[k.slice(5)].label; if (k.startsWith('animal:')) { const s = KOTA.ZOO.species[+k.slice(7)]; return `🔎 ${s.e} ${s.name} · kuis`; } return k === 'pet' ? '🐇 Elus kelinci & kambing · gratis' : ACT_LABEL[k]; };
+const KOKI = { name: 'Pak Koki Udin', pitch: -0.25 }, DOKTER = { name: 'Dokter Sinta', pitch: 0.08 }, MIRA = { name: 'Kak Mira', pitch: 0.15 };
+function doActivity(k) {
+  if (k === 'skydown') { const s = KOTA.SPOTS.sky; teleport(s.x, s.z, 0); toast('⬇️ Kembali ke bawah'); return; }
+  if (nightDanger()) { SFX.soft(); say('Tokonya tutup kalau malam. Ayo ke zona hijau!', { force: true }); return; }
+  if (k === 'hats') return hatShop();
+  if (k.startsWith('shop:')) return shopMenu(k.slice(5));
+  if (k === 'photo') return takePhoto();
+  if (k === 'lift') {
+    const M = KOTA.MALL, cur = clamp(Math.round((player.y - 0.15) / 4.5), 0, 4);
+    npcAsk({ name: '🛗 Lift Kaca', pitch: 0.1 }, 'Mau ke lantai berapa?', M.names.map((n, i) => (i === cur ? `📍 ${n}` : n)), (i) => {
+      if (i === cur) return; tone(880, 0.15, { type: 'sine', vol: 0.08 }); tone(1175, 0.25, { type: 'sine', vol: 0.08, delay: 0.15 });
+      teleport(M.lift.x, M.lift.z, M.b[i]); toast(`🛗 ${M.names[i]}`);
+    });
+    return;
+  }
+  if (k.startsWith('animal:')) return animalInfo(+k.slice(7));
+  if (k === 'pet') { KOTA.petAnimals(player.pos.x, player.pos.z); animalSound('kambing'); doEmote('🥰'); burst(player.pos.clone().add(new THREE.Vector3(0, 1.2, 0)), ['#ff8fc0', '#ffffff']); say('Elus pelan-pelan, ya. Mereka senang!', { who: 'Pak Jono', pitch: -0.3, force: true }); return; }
+  if (k === 'birds') { KOTA.feedBirds(player.pos.x, player.pos.z); doEmote('😊'); SFX.good(); toast('🌾 Tebar jagung... burung merpati berdatangan!'); say('Sstt, diam dulu ya, biar merpatinya datang!', { force: true }); return; }
+  if (k === 'zoo') {
+    const JONO = { name: 'Pak Jono', pitch: -0.3 };
+    npcAsk(JONO, 'Mau memberi makan siapa? Satu koin, ya!', KOTA.ZOO.animals.map((a) => `${a.e} ${a.name}`), (i) => {
+      if (!payCoins(1)) return; const a = KOTA.feedAnimal(i); const p = a.g.position; burst(new THREE.Vector3(p.x, 3, p.z), ['#ff8fc0', '#ffd23a', '#3fb25a']); SFX.good(); animalSound(KOTA.ZOO.species[i].snd);
+      say(`Nyam nyam! Lihat, ${a.name} datang mendekat!`, { who: JONO.name, pitch: JONO.pitch, force: true });
+    });
+    return;
+  }
+  if (k === 'toys') {
+    const LILI = { name: 'Kak Lili', pitch: 0.2 }, mine = save.emotes || [], left = KOTA.STICKERS.filter((e) => !mine.includes(e));
+    if (!left.length) { say('Wah, koleksi stikermu sudah lengkap! Hebat!', { who: LILI.name, pitch: LILI.pitch, force: true }); return; }
+    const show = shuffle([...left]).slice(0, 4);
+    npcAsk(LILI, 'Mau stiker yang mana? Stiker jadi emotikon baru untukmu!', show.map((e) => `${e} · 🪙 4`), (i) => {
+      if (!payCoins(4)) return; save.emotes = [...mine, show[i]]; persist(); buildEmotes(); doEmote(show[i]); SFX.good();
+      say(`Stiker ${show[i]} sudah jadi milikmu! Coba ketuk tombol emotikon. Koleksimu ${save.emotes.length} dari ${KOTA.STICKERS.length}.`, { who: LILI.name, pitch: LILI.pitch, force: true });
+    });
+    return;
+  }
+  if (k === 'race') return startRace();
+  if (k === 'food' || k === 'foodcourt') {
+    const seller = k === 'food' ? KOKI : { name: 'Bang Ucok', pitch: -0.2 };
+    if (save.fullUntil && Date.now() < save.fullUntil) { say('Kamu masih kenyang, lho! Main dulu, nanti makan lagi, ya.', { who: seller.name, pitch: seller.pitch, force: true }); return; }
+    const menu = k === 'food' ? [['🍔', 'burger'], ['🍕', 'pizza'], ['🍜', 'mie ayam'], ['🍗', 'ayam goreng']] : [['🍲', 'bakso'], ['🍛', 'nasi goreng'], ['🍢', 'sate'], ['🧃', 'jus buah']];
+    npcAsk(seller, 'Mau makan apa? (5 koin, nyawa bertambah 1)', menu.map(([e, n]) => `${e} ${n[0].toUpperCase() + n.slice(1)}`), (i) => {
+      if (!payCoins(5)) return; eatFood(seller, menu[i][0], menu[i][1], 1);
+    });
+    return;
+  }
+  if (k === 'clinic') return hospitalMenu();
+  if (k === 'books') return openBooks();
+  if (k === 'theater') return theaterMenu();
+  if (k === 'bumper') return startBumper();
+  if (k === 'claw') {
+    if (!payCoins(1)) return; toast('🕹️ Capit turun...'); tone(300, 0.6, { type: 'square', slide: 1.5, vol: 0.04 });
+    setTimeout(() => {
+      const left = KOTA.STICKERS.filter((e) => !(save.emotes || []).includes(e));
+      if (Math.random() < 0.38) {
+        if (left.length) { const e = pick(left); save.emotes = [...(save.emotes || []), e]; buildEmotes(); doEmote(e); say(`Yeay, dapat stiker ${e}!`, { force: true }); }
+        else { save.coins = (save.coins || 0) + 2; updateVitals(); say('Yeay, dapat dua koin!', { force: true }); }
+        persist(); celebrate('small'); SFX.good();
+      } else { SFX.soft(); say('Yaah, lepas! Coba lagi!', { force: true }); }
+    }, 1400);
+    return;
+  }
+  if (k === 'sky') { if (!payCoins(3)) return; const [x, z, y] = KOTA.SKY.deck; teleport(x, z, y); say('Wuuush! Tinggi sekali! Lihat ke bawah!', { force: true }); return; }
+  if (k === 'icecream') { if (!payCoins(1)) return; floatText('🍦'); doEmote('😋'); SFX.good(); say('Ini es krimnya! Dingin dan manis. Hati-hati jangan sampai meleleh!', { who: 'Bu Wati', pitch: 0.12, force: true }); }
+}
+// kebun binatang: papan info → fakta, suara, kuis (⭐, sekali per menit per hewan)
+const zooStarAt = new Map();
+function animalInfo(i) {
+  const s = KOTA.ZOO.species[i], JONO = { name: 'Pak Jono', pitch: -0.3 }, sayJ = (t) => say(t, { who: JONO.name, pitch: JONO.pitch, force: true });
+  animalSound(s.snd);
+  npcAsk(JONO, `${s.name}, dari ${s.from}. ${pick(s.facts)}`, ['❓ Tebak-tebakan', '🔊 Dengar suaranya', '👋 Sudah'], (k) => {
+    if (k === 1) { animalSound(s.snd); return; }
+    if (k !== 0) return;
+    const [q, opts, right] = s.quiz, order = shuffle(opts.map((o, j) => j));
+    npcAsk(JONO, q, order.map((j) => opts[j]), (c) => {
+      if (order[c] !== right) { SFX.soft(); sayJ(`Hampir! Jawabannya ${opts[right].replace(/^\S+\s/, '')}.`); return; }
+      SFX.good(); celebrate('small'); doEmote('😀');
+      if (performance.now() - (zooStarAt.get(i) || -1e9) > 60000) { zooStarAt.set(i, performance.now()); save.coins = (save.coins || 0) + CITY_PAY; persist(); updateVitals(); floatText(`+${CITY_PAY} 🪙`); sayJ(CITY_PAY === 1 ? 'Betul! Pintar sekali! Ini satu koin.' : `Betul! Pintar sekali! Ini ${CITY_PAY} koin.`); } else sayJ('Betul! Pintar sekali!');
+    });
+  });
+}
+// suara hewan sederhana dari nada
+function animalSound(k) {
+  const T = (f, d, o = {}) => tone(f, d, { vol: 0.07, ...o });
+  if (k === 'gajah') { T(330, 0.9, { type: 'sawtooth', slide: 2.2 }); T(220, 0.9, { type: 'square', slide: 2, vol: 0.03 }); }
+  else if (k === 'auman') { T(95, 1.3, { type: 'sawtooth', slide: 0.55, vol: 0.09 }); T(70, 1.2, { type: 'square', slide: 0.6, vol: 0.04, delay: 0.05 }); }
+  else if (k === 'monyet') [700, 900, 700, 950].forEach((f, j) => T(f, 0.15, { type: 'square', vol: 0.04, delay: j * 0.16 }));
+  else if (k === 'jerapah') T(180, 0.6, { slide: 1.3 });
+  else if (k === 'desis') for (let j = 0; j < 10; j++) T(2600 + Math.random() * 1600, 0.05, { type: 'triangle', vol: 0.025, delay: j * 0.05 });
+  else if (k === 'pinguin') [0, 0.22, 0.44].forEach((d) => T(850, 0.18, { type: 'square', slide: 1.4, vol: 0.04, delay: d }));
+  else if (k === 'kambing') for (let j = 0; j < 8; j++) T(j % 2 ? 420 : 440, 0.08, { type: 'triangle', delay: j * 0.07 });
+}
+// jajanan kota (kafe, toko roti, lapak buah, gerobak): menu dari KOTA.SHOPS
+const capW = (t) => t[0].toUpperCase() + t.slice(1);
+function shopMenu(id) {
+  const S = KOTA.SHOPS[id], who = { name: S.who, pitch: S.pitch };
+  npcAsk(who, S.q, S.items.map(([e, n, p]) => `${e} ${capW(n)} · 🪙 ${p}`), (i) => {
+    const [e, nm, price, kind, line] = S.items[i];
+    if (kind === 'eat') { if (save.fullUntil && Date.now() < save.fullUntil) { say('Kamu masih kenyang, lho! Main dulu, nanti makan lagi, ya.', { who: who.name, pitch: who.pitch, force: true }); return; } if (!payCoins(price)) return; eatFood(who, e, line, 0.5); return; }
+    if (!payCoins(price)) return;
+    if (kind === 'balloon') { holdBalloon(line); SFX.pop(); say(`Ini ${nm}mu! Pegang talinya erat-erat, ya. Kalau malam tiba, balonnya terbang ke langit.`, { who: who.name, pitch: who.pitch, force: true }); return; }
+    burst(player.pos.clone().add(new THREE.Vector3(0, 2.4 + player.y, 0)), kind === 'fruit' ? ['#3fb25a', '#ffd23a', '#e8434b'] : ['#ff8fc0', '#ffd23a', '#ffffff']);
+    floatText(e); doEmote(kind === 'fruit' ? '😋' : '😍'); SFX.good();
+    if (kind === 'cake') { celebrate('small'); [262, 262, 294, 262, 349, 330, 262, 262, 294, 262, 392, 349].forEach((f, k) => tone(f * 2, 0.3, { type: 'triangle', vol: 0.07, delay: 0.5 + k * 0.34 + (k === 6 ? 0.3 : 0) })); }
+    say(line, { who: who.name, pitch: who.pitch, force: true });
+  });
+}
+// balon yang dipegang pemain (hanya terlihat di perangkat sendiri)
+let myBalloon = null;
+function holdBalloon(color) {
+  releaseBalloon(true);
+  const g = new THREE.Group(), b = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12), new THREE.MeshLambertMaterial({ color })); b.scale.set(1, 1.15, 1); b.position.set(1.0, 4.2, 0.35); g.add(b);
+  const knot = box(0.12, 0.12, 0.12, color, 1.0, 3.66, 0.35, g, false); knot.castShadow = false;
+  const str = box(0.03, 2.5, 0.03, '#f4f4f4', 0.9, 2.45, 0.35, g, false); str.rotation.z = 0.04;
+  player.ch.root.add(g); myBalloon = { g, b, t: 0 };
+  animated.push({ obj: g, fn: (t) => { if (myBalloon?.g !== g) return; b.position.x = 1.0 + Math.sin(t * 1.4) * 0.12; b.position.y = 4.2 + Math.sin(t * 1.9) * 0.08; } });
+}
+function releaseBalloon(quiet = false) {
+  if (!myBalloon) return; const { g } = myBalloon; myBalloon = null;
+  if (quiet) { g.parent?.remove(g); return; }
+  const p = new THREE.Vector3(); g.children[0].getWorldPosition(p); g.parent?.remove(g); g.position.copy(p).sub(g.children[0].position); scene.add(g);
+  const t0 = performance.now(); animated.push({ obj: g, fn: () => { const k = (performance.now() - t0) / 1000; if (k > 7) { scene.remove(g); return; } g.position.y += 0.05; g.rotation.z = Math.sin(k * 2) * 0.2; } });
+  toast('🎈 Balonmu terbang ke langit. Dadah, balon!');
+}
+// foto: kilat putih + bunyi jepret
+function takePhoto() {
+  const s = Object.values(KOTA.SPOTS).filter((q) => q.kind === 'photo').sort((a, b) => Math.hypot(a.x - player.pos.x, a.z - player.pos.z) - Math.hypot(b.x - player.pos.x, b.z - player.pos.z))[0];
+  const el = $('#flash'); el.hidden = false; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); setTimeout(() => (el.hidden = true), 700);
+  tone(1800, 0.05, { type: 'square', vol: 0.06 }); tone(900, 0.08, { type: 'square', vol: 0.05, delay: 0.06 });
+  doEmote(pick(['😁', '😎', '🥳', '✌️'])); setTimeout(() => say(`Cekrek! Fotomu di ${s?.where || 'kota'} bagus sekali! Gaya lagi, yuk!`, { force: true }), 400);
+}
+// musik angklung (pemain angklung di alun-alun)
+const NADA = [523, 587, 659, 698, 784, 880, 988, 1047];
+function angklung(f, d) { for (let k = 0; k < 4; k++) tone(f, 0.12, { type: 'triangle', vol: 0.06, delay: d + k * 0.075 }); tone(f / 2, 0.3, { vol: 0.03, delay: d }); }
+function playTune(kind) {
+  if (kind === 'nada') { NADA.forEach((f, i) => angklung(f, 0.4 + i * 0.6)); return; }
+  [0, 0, 4, 4, 5, 5, 4, -1, 3, 3, 2, 2, 1, 1, 0].forEach((n, i) => { if (n >= 0) angklung(NADA[n], 0.4 + i * 0.42); });
+}
+// suara suasana kota: musik ondel-ondel, merpati
+let cityAmbT = 0, ambLast = {};
+function cityAmbience(dt) {
+  if ((cityAmbT -= dt) > 0) return; cityAmbT = 0.5;
+  const a = KOTA.cityAmbient(player), now = performance.now();
+  if (!a || now - (ambLast[a] || 0) < (a === 'ondel' ? 4200 : a === 'birdsfly' ? 2500 : 7000)) return; ambLast[a] = now;
+  if (a === 'ondel') { const P5 = [392, 440, 523, 587, 659]; for (let i = 0; i < 8; i++) tone(P5[(i * 3 + randi(0, 2)) % 5], 0.2, { type: 'triangle', vol: 0.045, delay: i * 0.26 }); for (let i = 0; i < 4; i++) tone(110, 0.12, { type: 'square', vol: 0.04, delay: i * 0.52 }); }
+  else if (a === 'birds') { tone(400, 0.2, { slide: 0.8, vol: 0.05 }); tone(360, 0.3, { slide: 0.75, vol: 0.05, delay: 0.25 }); }
+  else if (a === 'birdsfly') for (let i = 0; i < 6; i++) tone(rand(180, 260), 0.05, { type: 'square', vol: 0.025, delay: i * 0.05 });
+}
+// toko topi kota: beli topi baru dengan koin (tersimpan di data pemain)
+function hatShop() {
+  const items = Object.entries(HATS).filter(([id, h]) => h.shop && !save.hats.includes(id));
+  if (!items.length) { say('Wah, kamu sudah punya semua topi di toko ini! Keren!', { who: MIRA.name, pitch: MIRA.pitch, force: true }); return; }
+  const show = shuffle(items).slice(0, 4);
+  npcAsk(MIRA, 'Mau topi yang mana? Topi baru langsung kamu pakai!', show.map(([, h]) => `${h.e} ${h.name} · 🪙 ${h.shop}`), (i) => {
+    const [id, h] = show[i]; if (!payCoins(h.shop)) return;
+    if (!save.hats.includes(id)) save.hats.push(id); save.avatar.hat = id; persist(); applyAvatar(); celebrate('small'); SFX.good();
+    say(`Ini ${h.name}mu! Cocok sekali! Bisa diganti di menu Ganti Baju.`, { who: MIRA.name, pitch: MIRA.pitch, force: true });
+  });
+}
+// teater kota: aktor NPC memerankan cerita pilihan. Dalam kisah nabi, nabi TIDAK diperankan aktor:
+// kisahnya dituturkan narator dan kehadiran nabi dilambangkan cahaya (adab umum dalam kisah nabi).
+const STORIES = [
+  { e: '🚢', title: 'Nabi Nuh dan Kapal Besar', cast: [{ shirt: '#a5764a' }, { shirt: '#5b6b8c', girl: true }, { shirt: '#8a5a35' }], moral: 'taatlah kepada Allah dan dengarkan nasihat yang baik', scenes: [
+    { say: 'Dahulu kala, Nabi Nuh mengajak kaumnya menyembah Allah dan berbuat baik.', light: true, act: [[0.25, 'stand'], [0.55, 'stand'], [0.8, 'stand']] },
+    { say: 'Tetapi banyak orang tidak mau mendengar. Mereka malah menertawakan nasihat Nabi Nuh.', light: true, act: [[0.2, 'laugh'], [0.6, 'laugh'], [0.85, 'laugh']] },
+    { say: 'Allah memerintahkan Nabi Nuh membuat kapal yang sangat besar, walaupun jauh dari laut.', light: true, props: [['🚢', 0.5, 3.4]], act: [[0.1, 'shake'], null, [0.9, 'shake']] },
+    { say: 'Orang-orang beriman dan hewan-hewan berpasangan naik ke kapal. Ada gajah, jerapah, domba, dan burung.', light: true, props: [['🚢', 0.5, 3.2], ['🐘🐘', 0.14, 1.3], ['🦒🦒', 0.32, 1.3], ['🐑🐑', 0.7, 1.2], ['🐦🐦', 0.88, 1.2]] },
+    { say: 'Lalu turun hujan yang sangat deras. Air naik tinggi, terjadilah banjir besar.', props: [['🌧️', 0.2, 1.8], ['🌊🌊🌊', 0.5, 2.2], ['🚢', 0.5, 3], ['🌧️', 0.8, 1.8]], act: [[0.05, 'scared'], null, [0.95, 'scared']] },
+    { say: 'Kapal Nabi Nuh terapung dengan selamat sampai banjir surut, lalu berlabuh di atas gunung.', light: true, props: [['⛰️', 0.5, 2.6], ['🚢', 0.5, 2], ['🌈', 0.5, 3.6]] },
+  ] },
+  { e: '🐋', title: 'Nabi Yunus dan Ikan Besar', cast: [{ shirt: '#3a8fa8', hat: 'nelayan' }, { shirt: '#ffffff' }, { shirt: '#9a62e0', girl: true }], moral: 'jangan putus asa, selalu berdoa dan bersabar', scenes: [
+    { say: 'Nabi Yunus mengajak kaumnya beriman kepada Allah, tetapi mereka tidak mau mendengar.', light: true, act: [[0.3, 'shake'], [0.6, 'shake'], [0.85, 'shake']] },
+    { say: 'Nabi Yunus pergi meninggalkan mereka dan naik sebuah kapal ke tengah laut.', light: true, props: [['⛵', 0.5, 2.6], ['🌊🌊', 0.5, 1.3]], act: [[0.35, 'stand'], [0.65, 'stand'], null] },
+    { say: 'Tiba-tiba datang badai besar. Kapal bergoyang-goyang!', props: [['⛈️', 0.3, 2], ['🌊🌊🌊', 0.5, 1.8], ['⛵', 0.55, 2.4]], act: [[0.3, 'scared'], [0.7, 'scared'], null] },
+    { say: 'Nabi Yunus masuk ke laut dan ditelan ikan yang sangat besar. Dengan izin Allah, beliau tetap selamat.', props: [['🐋', 0.5, 4], ['🌊🌊', 0.5, 1.3]] },
+    { say: 'Di dalam perut ikan yang gelap, Nabi Yunus berdoa: Laa ilaaha illaa anta, subhaanaka, innii kuntu minazh zhaalimiin.', light: true, props: [['🐋', 0.5, 4], ['🤲', 0.5, 1.3]] },
+    { say: 'Allah mengabulkan doanya. Ikan itu mengeluarkan Nabi Yunus di pantai, dan tumbuhlah pohon labu untuk berteduh.', light: true, props: [['🏝️', 0.4, 2.6], ['🌿', 0.65, 2]] },
+    { say: 'Akhirnya kaumnya pun beriman kepada Allah.', light: true, act: [[0.3, 'cheer'], [0.55, 'cheer'], [0.8, 'cheer']] },
+  ] },
+  { e: '🐜', title: 'Nabi Sulaiman dan Semut', cast: [{ shirt: '#3a5f9e', hat: 'tinggi' }, { shirt: '#3a5f9e' }, { shirt: '#3a5f9e' }], moral: 'sayangi hewan kecil dan selalu bersyukur', scenes: [
+    { say: 'Nabi Sulaiman adalah raja yang bijaksana. Allah memberi beliau kemampuan memahami bahasa hewan.', light: true, props: [['👑', 0.5, 2.6]] },
+    { say: 'Suatu hari Nabi Sulaiman berjalan bersama pasukan yang sangat besar.', light: true, act: [[0.15, 'walk'], [0.3, 'walk'], [0.45, 'walk']] },
+    { say: 'Mereka sampai di sebuah lembah tempat tinggal para semut.', props: [['🐜🐜🐜', 0.78, 1.3], ['🏔️', 0.9, 2.2]], act: [[0.25, 'stand'], [0.4, 'stand'], [0.55, 'stand']] },
+    { say: 'Wahai para semut, masuklah ke rumah kalian, supaya tidak terinjak tanpa sengaja!', who: 'Ratu Semut', props: [['🐜', 0.72, 2.2], ['🐜🐜🐜', 0.86, 1.3]] },
+    { say: 'Nabi Sulaiman mendengar perkataan semut itu. Beliau tersenyum dan bersyukur kepada Allah.', light: true, props: [['🐜🐜', 0.82, 1.2]], act: [[0.2, 'stand'], [0.35, 'stand'], [0.5, 'stand']] },
+    { say: 'Pasukan pun berjalan dengan hati-hati supaya tidak menginjak semut.', light: true, act: [[0.3, 'walk'], [0.45, 'walk'], [0.6, 'walk']] },
+  ] },
+  { e: '📚', title: 'R.A. Kartini', cast: [{ shirt: '#9a62e0', girl: true, name: 'Kartini' }, { shirt: '#ff8fc0', girl: true, small: true }, { shirt: '#ffd23a', girl: true, small: true }], moral: 'rajin belajar, karena belajar membuat kita pintar dan bisa menolong orang lain', scenes: [
+    { say: 'Dahulu, banyak anak perempuan di Indonesia tidak boleh sekolah.', act: [null, [0.6, 'sad'], [0.78, 'sad']] },
+    { say: 'Raden Ajeng Kartini sangat suka membaca dan belajar.', props: [['📚', 0.18, 1.5]], act: [[0.3, 'stand'], null, null] },
+    { say: 'Kartini menulis banyak surat tentang mimpinya: semua anak perempuan boleh belajar dan menjadi pintar.', props: [['✉️', 0.15, 1.3], ['✏️', 0.45, 1.1]], act: [[0.3, 'stand'], null, null] },
+    { say: 'Ayo anak-anak, kita belajar membaca dan menulis bersama!', who: 'Kartini', props: [['📖', 0.45, 1.5]], act: [[0.3, 'wave'], [0.6, 'walk'], [0.78, 'walk']] },
+    { say: 'Habis gelap terbitlah terang! Sekarang semua anak bisa sekolah. Kita memperingati Hari Kartini setiap 21 April.', props: [['☀️', 0.5, 3]], act: [[0.3, 'cheer'], [0.55, 'cheer'], [0.78, 'cheer']] },
+  ] },
+  { e: '🏫', title: 'Ki Hajar Dewantara', cast: [{ shirt: '#ffffff', hat: 'peci', name: 'Ki Hajar Dewantara' }, { shirt: '#3a7cf5', small: true }, { shirt: '#e8434b', small: true, girl: true }], moral: 'hormati gurumu dan semangat belajar setiap hari', scenes: [
+    { say: 'Dahulu tidak semua anak Indonesia bisa bersekolah.', act: [null, [0.6, 'sad'], [0.78, 'sad']] },
+    { say: 'Ki Hajar Dewantara ingin semua anak bisa belajar. Beliau mendirikan sekolah bernama Taman Siswa.', props: [['🏫', 0.6, 2.8]], act: [[0.3, 'stand'], null, null] },
+    { say: 'Ayo anak-anak, kita belajar bersama!', who: 'Ki Hajar Dewantara', props: [['🏫', 0.6, 2.8]], act: [[0.3, 'wave'], [0.6, 'walk'], [0.78, 'walk']] },
+    { say: 'Beliau berpesan: guru memberi contoh yang baik, menyemangati, dan mendukung murid-muridnya.', props: [['⭐', 0.5, 2]], act: [[0.3, 'stand'], [0.6, 'cheer'], [0.78, 'cheer']] },
+    { say: 'Ki Hajar Dewantara disebut Bapak Pendidikan Indonesia. Hari lahirnya, 2 Mei, diperingati sebagai Hari Pendidikan Nasional.', props: [['🇮🇩', 0.5, 2.4]] },
+  ] },
+  { e: '🇮🇩', title: 'Hari Kemerdekaan Indonesia', cast: [{ shirt: '#ffffff', hat: 'peci', name: 'Bung Karno' }, { shirt: '#ffffff', hat: 'peci', name: 'Bung Hatta' }, { shirt: '#e8434b', girl: true }], moral: 'cintai Indonesia, hidup rukun, dan saling membantu', scenes: [
+    { say: 'Dahulu Indonesia belum merdeka. Rakyat ingin bebas menentukan nasibnya sendiri.', act: [null, null, [0.7, 'sad']] },
+    { say: 'Para pahlawan berjuang dengan berani dan bersatu.', props: [['🤝', 0.5, 1.8]], act: [[0.3, 'stand'], [0.45, 'stand'], [0.7, 'stand']] },
+    { say: 'Pada tanggal 17 Agustus 1945, Bung Karno dan Bung Hatta membacakan teks Proklamasi.', props: [['📜', 0.38, 1.3]], act: [[0.35, 'stand'], [0.5, 'stand'], [0.78, 'stand']] },
+    { say: 'Bendera Merah Putih dikibarkan. Semua orang bersorak: Merdeka!', props: [['🇮🇩', 0.5, 3]], act: [[0.35, 'cheer'], [0.5, 'cheer'], [0.78, 'cheer']] },
+    { say: 'Setiap 17 Agustus kita merayakan Hari Kemerdekaan dengan upacara dan lomba yang seru.', props: [['🇮🇩', 0.5, 3], ['🎉', 0.2, 1.5], ['🏃', 0.82, 1.4]] },
+  ] },
+  { e: '🦌', title: 'Kancil dan Buaya', cast: [], moral: 'pintar itu baik, tetapi jangan berbohong', scenes: [
+    { say: 'Si Kancil ingin menyeberang sungai untuk makan timun.', props: [['🦌', 0.2, 1.8], ['🌳', 0.08, 2.6], ['🥒', 0.88, 1.3]] },
+    { say: 'Tapi di sungai ada banyak buaya yang lapar!', props: [['🦌', 0.15, 1.8], ['🐊🐊🐊', 0.55, 1.6]] },
+    { say: 'Kancil punya ide. Ayo berbaris, aku mau menghitung kalian!', who: 'Kancil', props: [['🦌', 0.15, 1.8], ['💡', 0.15, 3.2], ['🐊🐊🐊🐊', 0.55, 1.6]] },
+    { say: 'Kancil melompat di atas punggung buaya sambil menghitung. Satu, dua, tiga, empat, lima!', props: [['🦌', 0.6, 2.6], ['🐊🐊🐊🐊🐊', 0.55, 1.4]] },
+    { say: 'Kancil sampai di seberang dan makan timun. Nyam nyam!', props: [['🦌', 0.85, 1.8], ['🥒', 0.95, 1.3], ['😋', 0.85, 3]] },
+  ] },
+  { e: '🐢', title: 'Kura-kura dan Kelinci', cast: [], moral: 'pelan-pelan asal terus berusaha, pasti berhasil', scenes: [
+    { say: 'Kelinci dan Kura-kura mau lomba lari.', props: [['🐇', 0.2, 1.8], ['🐢', 0.3, 1.6], ['🏁', 0.9, 2.2]] },
+    { say: 'Kelinci berlari cepat sekali! Kura-kura berjalan pelan-pelan.', props: [['🐇💨', 0.6, 1.8], ['🐢', 0.35, 1.6], ['🏁', 0.9, 2.2]] },
+    { say: 'Kelinci merasa pasti menang, lalu tidur di bawah pohon.', props: [['🌳', 0.6, 2.8], ['🐇😴', 0.62, 1.4], ['🐢', 0.45, 1.6]] },
+    { say: 'Kura-kura terus berjalan, tidak pernah berhenti.', props: [['🌳', 0.6, 2.8], ['🐇😴', 0.62, 1.4], ['🐢', 0.78, 1.6]] },
+    { say: 'Kura-kura sampai duluan! Kura-kura menang!', props: [['🐢🎉', 0.9, 1.8], ['🏁', 0.95, 2.6], ['🐇😮', 0.6, 1.5]] },
+  ] },
+];
+const show = { on: false, i: 0, targets: [], anims: [], props: [], t: 0 };
+const DONI = { name: 'Kak Doni', pitch: -0.1 };
+function theaterMenu() {
+  const opts = shuffle([...STORIES]).slice(0, 4);
+  npcAsk(DONI, 'Selamat datang di Teater Kota! Mau nonton cerita apa? (3 koin)', opts.map((st) => `${st.e} ${st.title}`), (i) => { if (payCoins(3)) startShow(opts[i]); });
+}
+function stageX(f) { const T = KOTA.THEATER; return T.x0 + (T.x1 - T.x0) * f; }
+async function startShow(st) {
+  if (show.on) return; const T = KOTA.THEATER; show.on = true; show.title = st.title;
+  const [sx, sz] = T.seat; teleport(sx, sz, 0.45); view.yaw = Math.PI; player.facing = 0;
+  showAction('⏹️ Selesai nonton', () => endShow(true));
+  T.actors.forEach((ch, k) => {
+    const c = st.cast[k]; ch.root.visible = false; if (!c) return;
+    ch.m.shirt.color.set(c.shirt); ch.m.pants.color.set(c.pants || '#2c2f3a'); ch.setGirl(!!c.girl); ch.root.scale.setScalar(c.small ? 0.8 : 1);
+    ch.hatSlot.clear(); if (c.hat) ch.hatSlot.add(makeHat(c.hat));
+    ch.root.position.set(T.back[0], T.y, T.back[1]);
+  });
+  say(`Tirai dibuka! Selamat menonton: ${st.title}.`, { who: 'Narator', force: true }); await wait(3500);
+  for (let i = 0; i < st.scenes.length && show.on; i++) {
+    const sc = st.scenes[i]; show.i = i;
+    $('#vehChip').hidden = false; $('#vehChip').textContent = `🎭 ${st.title} · ${i + 1}/${st.scenes.length}`;
+    for (const p of show.props) T.props.remove(p); show.props = [];
+    for (const [e, f, sz] of sc.props || []) { const sp = emojiSprite(e, sz); sp.position.set(stageX(f), T.y + sz / 2 + 0.3, T.z + 0.6); T.props.add(sp); show.props.push(sp); }
+    T.light.visible = !!sc.light; T.light.position.set(stageX(0.5), T.y + 3.4, T.z + 0.4);
+    T.actors.forEach((ch, k) => { const a = sc.act?.[k]; show.targets[k] = a ? stageX(a[0]) : null; show.anims[k] = a ? a[1] : null; if (a && st.cast[k]) ch.root.visible = true; });
+    say(sc.say, { who: sc.who || st.cast.find((c, k) => sc.act?.[k] && c.name && sc.who === c.name)?.name || 'Narator', force: true });
+    await wait(3600 + sc.say.length * 60);
+  }
+  if (show.on) {
+    T.actors.forEach((ch, k) => { if (st.cast[k]) { ch.root.visible = true; show.targets[k] = stageX(0.25 + k * 0.25); show.anims[k] = 'bow'; } });
+    say(`Selesai! Pesan cerita ini: ${st.moral}. Ayo tepuk tangan! 👏`, { who: 'Narator', force: true }); celebrate('small', '👏');
+    await wait(6000); endShow(false);
+  }
+}
+function endShow(manual) {
+  if (!show.on) return; show.on = false; const T = KOTA.THEATER;
+  for (const p of show.props) T.props.remove(p); show.props = []; T.light.visible = false;
+  T.actors.forEach((ch) => (ch.root.visible = false)); hideAction(); $('#vehChip').hidden = true;
+  if (manual) { if (hasTTS) speechSynthesis.cancel(); toast('🎭 Pertunjukan dihentikan'); }
+}
+// gerak aktor di panggung
+function showTick(dt) {
+  if (!show.on) return; const T = KOTA.THEATER, t = elapsed;
+  if (Math.hypot(player.pos.x - T.seat[0], player.pos.z - T.seat[1]) > 40) { endShow(true); return; }
+  T.actors.forEach((ch, k) => {
+    if (!ch.root.visible) return; const tx = show.targets[k], an = show.anims[k], r = ch.root;
+    let moving = false; if (tx != null) { const d = tx - r.position.x; if (Math.abs(d) > 0.05) { r.position.x += Math.sign(d) * Math.min(Math.abs(d), 2.2 * dt); moving = true; r.rotation.y = d > 0 ? Math.PI / 2 : -Math.PI / 2; } }
+    r.position.z = T.z; if (!moving) r.rotation.y += (Math.PI - r.rotation.y) * Math.min(1, dt * 5); // menghadap penonton
+    const sw = moving || an === 'walk' ? Math.sin(t * 9 + k) * 0.6 : 0; ch.hipL.rotation.x = sw; ch.hipR.rotation.x = -sw;
+    let y = T.y, armL = moving ? -sw : 0, armR = moving ? sw : 0, tilt = 0, shakeY = 0;
+    if (an === 'laugh') { y += Math.abs(Math.sin(t * 8 + k)) * 0.25; armL = armR = -0.5; }
+    if (an === 'cheer') { y += Math.abs(Math.sin(t * 6 + k)) * 0.5; armL = armR = -2.8; }
+    if (an === 'wave') { armR = -2.6; ch.shR.rotation.z = Math.sin(t * 10) * 0.4; }
+    if (an === 'scared') { shakeY = Math.sin(t * 30) * 0.06; armL = armR = -2.2; }
+    if (an === 'shake') { ch.head.rotation.y = Math.sin(t * 7) * 0.5; } else ch.head.rotation.y = 0;
+    if (an === 'sad') tilt = 0.35; if (an === 'bow') tilt = Math.max(0, Math.sin(t * 2)) * 0.8;
+    if (an !== 'wave') ch.shR.rotation.z = 0;
+    r.position.y = y; r.position.x += shakeY; ch.shL.rotation.x = armL; ch.shR.rotation.x = armR; ch.body.rotation.x = tilt;
+  });
+  if (T.light.visible) { T.light.rotation.y += dt; T.light.material.opacity = 0.6 + Math.sin(t * 2) * 0.25; }
+}
+
+/* ---------- rumah sakit kota: berobat sungguhan (diperiksa, minum obat, istirahat di ranjang) ---------- */
+const ANI = { name: 'Suster Ani', pitch: 0.15 }, SINTA = { name: 'Dokter Sinta', pitch: 0.08 };
+const care = { on: false };
+const CARE_STEPS = [
+  ['🌡️', 'Dokter mengukur suhu badanmu dulu, ya. Tahan sebentar...', 'Suhunya tiga puluh enam setengah derajat. Normal!'],
+  ['🩺', 'Sekarang dokter mendengar detak jantungmu. Dug-dug, dug-dug...', 'Jantungmu kuat!'],
+  ['👅', 'Coba buka mulut lebar-lebar, bilang aaa...', 'Tenggorokannya bersih. Pintar!'],
+  ['💊', 'Ini obat dan vitamin. Diminum, ya. Pahit sedikit tidak apa-apa!', 'Hebat, obatnya sudah diminum!'],
+  ['😴', 'Sekarang berbaring dan istirahat sebentar supaya cepat pulih...', ''],
+];
+function hospitalMenu() {
+  if (veh.kind || ride || transit || care.on) return;
+  const hp = save.hp ?? 3, mx = save.maxHp || 5;
+  if (hp >= mx) { npcAsk(ANI, 'Nyawamu penuh, kamu sehat sekali! Mau cek kesehatan gratis dengan Dokter Sinta?', ['🩺 Cek kesehatan · gratis'], () => startCare('cek')); return; }
+  npcAsk(ANI, `Nyawamu tinggal ${Math.floor(hp)} dari ${mx}. Mau berobat?`, ['🩺 Periksa · ❤️ +1 · 🪙 5', '🛏️ Rawat sampai sehat · ❤️ penuh · 🪙 12'], (i) => { if (payCoins(i ? 12 : 5)) startCare(i ? 'rawat' : 'periksa'); });
+}
+function startCare(kind) {
+  const beds = KOTA.HOSPITAL.beds, free = beds.filter((b) => ![...remotes.values()].some((r) => Math.hypot(r.ch.root.position.x - b.x, r.ch.root.position.z - b.z) < 1.2));
+  const bed = pick(free.length ? free : beds);
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, bed.yaw, 0, 'YXZ')); // berbaring telentang, kepala ke arah bantal
+  Object.assign(care, { on: true, kind, bed, step: 0, idx: -1, t: -2, heal: 0, rest: 4, pose: { q, yaw: bed.yaw } });
+  hideAction(); climb.actBtn = null; player.target = null; marker.visible = false;
+  showAction('⏹️ Selesai berobat', () => endCare(true));
+  $('#eatE').textContent = '🏥'; $('#eatLbl').textContent = 'Berobat…'; $('#eatFill').style.width = '0%'; $('#eatBar').hidden = false;
+  say(kind === 'cek' ? 'Ayo cek kesehatan! Berbaring di ranjang, ya.' : 'Ayo berbaring di ranjang. Dokter Sinta akan memeriksamu.', { who: SINTA.name, pitch: SINTA.pitch, force: true });
+}
+function careStep(i) {
+  const [e, line] = CARE_STEPS[i], prev = i ? CARE_STEPS[i - 1][2] : '';
+  if (care.sprite) scene.remove(care.sprite);
+  care.sprite = emojiSprite(e, 1.3); care.sprite.position.set(care.bed.x, care.bed.y + 1.6, care.bed.z - 1.1); scene.add(care.sprite);
+  say(`${prev} ${line}`.trim(), { who: SINTA.name, pitch: SINTA.pitch, force: true });
+  if (e === '🩺') for (let k = 0; k < 8; k++) tone(k % 2 ? 70 : 95, 0.12, { type: 'sine', vol: 0.2, delay: 0.8 + k * 0.42 });
+  if (e === '💊') tone(660, 0.15, { type: 'triangle', vol: 0.06, delay: 2 });
+  if (e === '😴') care.rest = care.kind === 'rawat' ? Math.max(4, ((save.maxHp || 5) - (save.hp ?? 3)) * 2.5 + 1.5) : 4;
+}
+function careTick(dt) {
+  if (!care.on) return;
+  const b = care.bed; player.pos.x = b.x; player.pos.z = b.z; player.y = b.y; player.vy = 0; player.onGround = true; player.standOn = null; player.peak = b.y; player.facing = b.yaw; player.target = null;
+  care.t += dt; if (care.t < 0) return;
+  if (care.idx !== care.step) { care.idx = care.step; careStep(care.step); }
+  const dur = care.step === 4 ? care.rest : 5.5;
+  if (care.step === 4 && care.kind === 'rawat' && (care.heal += dt) >= 2.5) {
+    care.heal = 0; const mx = save.maxHp || 5;
+    if ((save.hp ?? 3) < mx) { save.hp = Math.min(mx, Math.floor((save.hp ?? 3) + 1)); persist(); updateVitals(); floatText('+1 ❤️'); tone(880, 0.15, { type: 'triangle', vol: 0.07 }); }
+  }
+  if (care.sprite) care.sprite.position.y = b.y + 1.6 + Math.sin(elapsed * 3) * 0.12;
+  $('#eatFill').style.width = `${Math.round(((care.step + Math.min(1, care.t / dur)) / CARE_STEPS.length) * 100)}%`;
+  $('#eatLbl').textContent = `${CARE_STEPS[care.step][0]} Berobat ${care.step + 1}/${CARE_STEPS.length}`;
+  if (care.t < dur) return;
+  care.t = 0; care.step++;
+  if (care.step < CARE_STEPS.length) return;
+  const mx = save.maxHp || 5;
+  if (care.kind === 'periksa') { save.hp = Math.min(mx, (save.hp ?? 3) + 1); floatText('+1 ❤️'); }
+  if (care.kind === 'rawat') save.hp = mx;
+  persist(); updateVitals(); celebrate('small'); SFX.good();
+  say(`${care.kind === 'cek' ? 'Selesai! Kamu sehat sekali.' : 'Sudah sembuh! Nyawamu bertambah.'} Pesan dokter: cuci tangan pakai sabun, makan sayur dan buah, lalu tidur yang cukup, ya!`, { who: SINTA.name, pitch: SINTA.pitch, force: true });
+  endCare(false);
+}
+function endCare(manual) {
+  if (!care.on) return; care.on = false;
+  if (care.sprite) { scene.remove(care.sprite); care.sprite = null; }
+  $('#eatBar').hidden = true; hideAction();
+  const [x, z, y] = care.bed.stand; teleport(x, z, y);
+  if (manual) toast('🏥 Berobat dihentikan');
+}
+
+/* ---------- perpustakaan: baca buku cerita bergambar (gratis). Tamat pertama kali = +1 ⭐ ---------- */
+// Dalam kisah nabi, nabi tidak digambarkan; gambar hanya benda & alam.
+const BOOK_CATS = [['nabi', '🌙 Nabi & Rasul'], ['pahlawan', '🇮🇩 Pahlawan'], ['akhlak', '❤️ Orang Tua & Akhlak'], ['dongeng', '🐢 Dongeng']];
+const BOOKS = [
+  { id: 'adam', cat: 'nabi', e: '🌍', title: 'Nabi Adam, Manusia Pertama', moral: 'kalau berbuat salah, segera minta maaf dan bertobat', pages: [
+    ['🌍✨', 'Dahulu kala, Allah menciptakan Nabi Adam. Beliau adalah manusia pertama di dunia.'],
+    ['🍎🌳🌸', 'Allah mengajari Nabi Adam nama-nama semua benda. Ada pohon, bunga, buah, dan hewan.'],
+    ['🏞️💞', 'Allah juga menciptakan Hawa sebagai teman Nabi Adam. Mereka tinggal di surga yang indah.'],
+    ['🌳🚫', 'Allah berpesan: jangan dekati satu pohon itu. Tetapi iblis membujuk mereka sampai lupa pesan Allah.'],
+    ['🤲💧', 'Nabi Adam dan Hawa menyesal. Mereka berdoa, mohon ampun kepada Allah.'],
+    ['💖🌏', 'Allah Maha Pengampun. Allah memaafkan mereka, lalu mereka tinggal di bumi dan menjadi ayah ibu seluruh manusia.'],
+  ] },
+  { id: 'nuh', cat: 'nabi', e: '🚢', title: 'Nabi Nuh dan Kapal Besar', moral: 'taatlah kepada Allah dan dengarkan nasihat yang baik', pages: [
+    ['🏘️🗣️', 'Nabi Nuh mengajak kaumnya menyembah Allah dan berbuat baik.'],
+    ['😆🙉', 'Tetapi banyak orang tidak mau mendengar. Mereka malah menertawakan Nabi Nuh.'],
+    ['🪵🔨🚢', 'Allah memerintahkan Nabi Nuh membuat kapal yang sangat besar, padahal di sana tidak ada laut.'],
+    ['🐘🦒🐑🐔', 'Orang-orang yang beriman naik ke kapal. Hewan-hewan juga naik, berpasang-pasangan.'],
+    ['🌧️🌊🌊', 'Lalu hujan turun deras sekali, dan air naik menjadi banjir besar.'],
+    ['🌈⛰️🕊️', 'Kapal Nabi Nuh selamat dan berlabuh di gunung. Semua yang taat kepada Allah selamat.'],
+  ] },
+  { id: 'ibrahim', cat: 'nabi', e: '⭐', title: 'Nabi Ibrahim Mencari Tuhan', moral: 'Allah yang menciptakan langit, bumi, dan seluruh isinya', pages: [
+    ['🌃⭐', 'Suatu malam Nabi Ibrahim melihat bintang yang bersinar. Apakah itu Tuhan? Tetapi bintang itu hilang.'],
+    ['🌕', 'Lalu bulan muncul, besar dan terang. Tetapi pagi datang, dan bulan pun hilang.'],
+    ['☀️', 'Kemudian matahari terbit, sangat besar. Tetapi sore hari matahari terbenam.'],
+    ['🤲💡', 'Nabi Ibrahim berkata: Tuhanku adalah Allah, yang menciptakan bintang, bulan, dan matahari. Allah tidak pernah hilang.'],
+    ['🔥➡️❄️', 'Raja yang jahat melempar Nabi Ibrahim ke dalam api. Allah membuat api itu menjadi dingin. Beliau selamat!'],
+    ['🕋🧱', 'Nabi Ibrahim dan putranya, Nabi Ismail, membangun Ka\'bah di Makkah untuk beribadah kepada Allah.'],
+  ] },
+  { id: 'yunus', cat: 'nabi', e: '🐋', title: 'Nabi Yunus dan Ikan Besar', moral: 'jangan putus asa dan selalu berdoa kepada Allah', pages: [
+    ['🏘️😔', 'Nabi Yunus sedih karena kaumnya tidak mau mendengar nasihatnya. Beliau pergi naik kapal.'],
+    ['⛵🌊⛈️', 'Di tengah laut datang badai besar. Kapal bergoyang-goyang!'],
+    ['🌊🐋', 'Nabi Yunus jatuh ke laut, lalu ditelan ikan yang sangat besar.'],
+    ['🌑🤲', 'Di dalam perut ikan gelap sekali. Nabi Yunus terus berdoa: Laa ilaaha illaa anta, subhaanaka, innii kuntu minazh zhaalimiin.'],
+    ['🏖️🌿', 'Allah mendengar doanya. Ikan besar mengeluarkan Nabi Yunus ke pantai dengan selamat.'],
+    ['🏘️😊', 'Nabi Yunus kembali ke kaumnya. Kali ini mereka mau mendengar dan beriman.'],
+  ] },
+  { id: 'musa', cat: 'nabi', e: '🌊', title: 'Nabi Musa dan Laut Terbelah', moral: 'Allah selalu menolong orang yang sabar dan beriman', pages: [
+    ['👑😠', 'Dahulu ada raja yang sangat sombong bernama Firaun. Ia jahat kepada Bani Israil.'],
+    ['🦯✨', 'Allah mengutus Nabi Musa dan memberinya tongkat yang penuh mukjizat.'],
+    ['🚶🚶🚶🌊', 'Nabi Musa mengajak Bani Israil pergi. Tetapi di depan mereka ada laut yang luas.'],
+    ['🐎🐎💨', 'Di belakang, Firaun dan pasukannya mengejar. Orang-orang pun takut.'],
+    ['🦯🌊↔️🌊', 'Allah memerintahkan Nabi Musa memukulkan tongkatnya ke laut. Laut pun terbelah, ada jalan kering di tengahnya!'],
+    ['🏝️🤲', 'Nabi Musa dan Bani Israil menyeberang dengan selamat. Mereka bersyukur kepada Allah.'],
+  ] },
+  { id: 'sulaiman', cat: 'nabi', e: '🐜', title: 'Nabi Sulaiman dan Semut', moral: 'sayangilah semua makhluk, sekecil apa pun', pages: [
+    ['👑🐦🦁', 'Nabi Sulaiman adalah raja yang bijaksana. Allah membuatnya bisa mengerti bahasa hewan.'],
+    ['🐎🐎🐎', 'Suatu hari Nabi Sulaiman dan pasukannya berjalan melewati sebuah lembah.'],
+    ['🐜🐜🐜', 'Seekor semut berteriak: Hai semut-semut, masuk ke rumahmu supaya tidak terinjak!'],
+    ['😊🤲', 'Nabi Sulaiman tersenyum mendengarnya. Beliau bersyukur kepada Allah.'],
+    ['🛑🐜', 'Beliau meminta pasukannya berhati-hati supaya tidak menginjak semut.'],
+  ] },
+  { id: 'muhammad', cat: 'nabi', e: '🌙', title: 'Nabi Muhammad yang Jujur', moral: 'jadilah anak yang jujur, ramah, dan penyayang', pages: [
+    ['🏜️🕋', 'Nabi Muhammad, shallallahu alaihi wasallam, lahir di kota Makkah.'],
+    ['👴💞', 'Sejak kecil beliau sudah yatim. Beliau dirawat dengan penuh kasih oleh kakek, lalu pamannya.'],
+    ['⚖️💎', 'Nabi Muhammad selalu jujur. Orang-orang memanggilnya Al-Amin, artinya orang yang bisa dipercaya.'],
+    ['🐫🛍️', 'Saat berdagang, beliau tidak pernah curang. Barang yang rusak dikatakan rusak.'],
+    ['🧒👧😊', 'Beliau sayang kepada anak-anak, suka tersenyum, dan memberi salam kepada siapa saja.'],
+    ['📖✨', 'Allah menurunkan Al-Qur\'an kepada Nabi Muhammad. Kita belajar membacanya sampai sekarang.'],
+  ] },
+  { id: 'kartini', cat: 'pahlawan', e: '✏️', title: 'R.A. Kartini', moral: 'semua anak, laki-laki dan perempuan, berhak belajar', pages: [
+    ['🏠👧', 'Raden Ajeng Kartini lahir di Jepara, Jawa Tengah.'],
+    ['🏫🚫', 'Dulu, anak perempuan tidak boleh sekolah tinggi. Kartini sedih sekali.'],
+    ['📚✉️', 'Kartini suka membaca buku dan menulis surat kepada sahabatnya di negeri jauh.'],
+    ['👧👧📖', 'Kartini mengajar anak-anak perempuan membaca dan menulis.'],
+    ['🌅', 'Surat-suratnya dibukukan dengan judul Habis Gelap Terbitlah Terang.'],
+    ['🌺🇮🇩', 'Setiap tanggal 21 April kita memperingati Hari Kartini.'],
+  ] },
+  { id: 'kihajar', cat: 'pahlawan', e: '🏫', title: 'Ki Hajar Dewantara', moral: 'rajinlah belajar, karena ilmu membuat kita maju', pages: [
+    ['👨‍🏫', 'Ki Hajar Dewantara adalah Bapak Pendidikan Indonesia.'],
+    ['🏫❌', 'Dulu, banyak anak Indonesia tidak bisa sekolah.'],
+    ['🏫🌳', 'Ki Hajar Dewantara mendirikan sekolah bernama Taman Siswa, supaya semua anak bisa belajar.'],
+    ['👣🤝', 'Semboyannya: Tut Wuri Handayani. Artinya guru mendorong dan menyemangati murid dari belakang.'],
+    ['📅✏️', 'Hari lahirnya, tanggal 2 Mei, diperingati sebagai Hari Pendidikan Nasional.'],
+  ] },
+  { id: 'diponegoro', cat: 'pahlawan', e: '🐎', title: 'Pangeran Diponegoro', moral: 'beranilah membela kebenaran dan menolong orang lain', pages: [
+    ['🏰👳', 'Pangeran Diponegoro adalah pangeran dari Yogyakarta. Beliau taat beribadah.'],
+    ['🌾😢', 'Dulu penjajah menyusahkan rakyat. Tanah dan sawah rakyat diambil.'],
+    ['🐎⚔️', 'Pangeran Diponegoro menunggang kuda dan berjuang membela rakyat.'],
+    ['⛰️🔥', 'Perjuangannya sangat berani dan lama, disebut Perang Jawa.'],
+    ['🇮🇩🏅', 'Sampai sekarang kita mengenang beliau sebagai pahlawan nasional.'],
+  ] },
+  { id: 'cutnyak', cat: 'pahlawan', e: '🛡️', title: 'Cut Nyak Dhien', moral: 'jangan mudah menyerah, tetaplah berani', pages: [
+    ['🏞️👩', 'Cut Nyak Dhien adalah pahlawan perempuan dari Aceh.'],
+    ['🛡️💪', 'Beliau sangat berani melawan penjajah untuk melindungi tanah kelahirannya.'],
+    ['🌲🌧️', 'Beliau berjuang di hutan, walau hujan dan lelah.'],
+    ['👵❤️', 'Sampai tua, Cut Nyak Dhien tidak pernah menyerah.'],
+    ['🇮🇩🏅', 'Kita bangga punya pahlawan seberani Cut Nyak Dhien.'],
+  ] },
+  { id: 'merdeka', cat: 'pahlawan', e: '🇮🇩', title: 'Hari Kemerdekaan', moral: 'cintailah tanah air dan bersatulah', pages: [
+    ['📅', 'Tanggal 17 Agustus 1945 adalah hari yang sangat penting untuk Indonesia.'],
+    ['🎤📜', 'Bung Karno dan Bung Hatta membacakan teks Proklamasi. Indonesia merdeka!'],
+    ['🧵🇮🇩', 'Bendera merah putih yang pertama dijahit oleh Ibu Fatmawati.'],
+    ['🙌🎉', 'Rakyat bergembira. Kita bebas dari penjajahan.'],
+    ['🏃🍬🏁', 'Setiap 17 Agustus kita upacara bendera dan ikut lomba seru: balap karung, makan kerupuk, dan tarik tambang!'],
+  ] },
+  { id: 'ayahibu', cat: 'akhlak', e: '❤️', title: 'Sayang Ayah dan Ibu', moral: 'sayangi, bantu, dan doakan ayah dan ibu', pages: [
+    ['🤱💞', 'Ibu mengandung kita sembilan bulan, lalu merawat kita dengan penuh sayang.'],
+    ['👨‍💼🏠', 'Ayah bekerja keras supaya kita bisa makan, sekolah, dan bermain.'],
+    ['🧹🧸', 'Kita bantu ayah dan ibu: membereskan mainan dan membantu di rumah.'],
+    ['🗣️💐', 'Kita berkata lembut, bilang tolong, maaf, dan terima kasih kepada ayah dan ibu.'],
+    ['🤲', 'Kita doakan mereka: Rabbighfirlii wa liwaalidayya warhamhumaa kamaa rabbayaanii shaghiiraa.'],
+    ['😊', 'Artinya: ya Allah, ampunilah aku dan ayah ibuku, sayangilah mereka seperti mereka menyayangiku waktu kecil.'],
+  ] },
+  { id: 'kakek', cat: 'akhlak', e: '👵', title: 'Sayang Kakek dan Nenek', moral: 'hormati dan sayangi orang yang lebih tua', pages: [
+    ['👴👵🏡', 'Kakek dan nenek adalah ayah dan ibu dari ayah dan ibu kita.'],
+    ['📖🧶', 'Kakek suka bercerita, nenek suka membuat kue yang enak.'],
+    ['🤝🚶', 'Kalau kakek berjalan pelan, kita gandeng tangannya dengan sabar.'],
+    ['☎️💌', 'Kalau jauh, kita telepon atau kirim gambar buatan kita.'],
+    ['🤲❤️', 'Kita doakan kakek dan nenek supaya sehat dan bahagia.'],
+  ] },
+  { id: 'malin', cat: 'akhlak', e: '🗿', title: 'Malin Kundang', moral: 'jangan durhaka, selalu hormati ibu', pages: [
+    ['🏖️👩‍👦', 'Dahulu di pantai Sumatera Barat, tinggal seorang ibu dan anaknya, Malin Kundang.'],
+    ['⛵👋', 'Malin pergi merantau naik kapal. Ibunya menunggu sambil berdoa setiap hari.'],
+    ['💰🚢', 'Bertahun-tahun kemudian Malin menjadi kaya. Ia pulang dengan kapal besar.'],
+    ['😢🙅', 'Ibunya datang memeluknya. Tetapi Malin malu dan berkata: kamu bukan ibuku!'],
+    ['⛈️🗿', 'Ibunya sangat sedih. Datang badai, dan menurut cerita rakyat, Malin berubah menjadi batu.'],
+    ['❤️👩', 'Kita tidak boleh durhaka. Sayangi ibu, apa pun keadaannya.'],
+  ] },
+  { id: 'adab', cat: 'akhlak', e: '🤲', title: 'Adab Sehari-hari', moral: 'sopan santun membuat semua orang senang', pages: [
+    ['🍚🤲', 'Sebelum makan, kita baca bismillah. Makan dengan tangan kanan, sambil duduk.'],
+    ['👋😊', 'Bertemu teman, kita ucapkan assalamualaikum dan tersenyum.'],
+    ['🙏', 'Kalau minta bantuan, bilang tolong. Kalau salah, bilang maaf.'],
+    ['🎁💖', 'Kalau diberi sesuatu, bilang terima kasih.'],
+    ['🗑️🌳', 'Buang sampah di tempatnya, supaya lingkungan bersih dan sehat.'],
+    ['😴🤲', 'Sebelum tidur, gosok gigi dan berdoa.'],
+  ] },
+  { id: 'kancil', cat: 'dongeng', e: '🐊', title: 'Kancil dan Buaya', moral: 'gunakan akalmu, dan jangan sombong', pages: [
+    ['🦌🍠', 'Si Kancil ingin makan buah di seberang sungai. Tetapi sungainya dalam.'],
+    ['🐊🐊🐊', 'Di sungai banyak buaya yang lapar. Kancil berpikir keras.'],
+    ['🦌👑', 'Kancil berkata: Raja menyuruhku menghitung buaya. Ayo berbaris!'],
+    ['🦌➡️🐊🐊🐊', 'Buaya-buaya berbaris. Kancil melompat di atas punggung mereka sambil menghitung: satu, dua, tiga...'],
+    ['🏞️🦌😄', 'Sampai di seberang, Kancil berterima kasih lalu berlari. Buaya baru sadar sudah dikelabui!'],
+  ] },
+  { id: 'kura', cat: 'dongeng', e: '🐢', title: 'Kura-kura dan Kelinci', moral: 'pelan tapi tekun lebih baik daripada cepat tapi sombong', pages: [
+    ['🐇😏', 'Kelinci suka menyombongkan diri karena larinya cepat.'],
+    ['🐢🏁', 'Kura-kura mengajak kelinci lomba lari. Kelinci tertawa.'],
+    ['🐇💨', 'Lomba dimulai! Kelinci berlari jauh di depan.'],
+    ['🐇😴🌳', 'Merasa pasti menang, kelinci tidur siang di bawah pohon.'],
+    ['🐢👣👣', 'Kura-kura terus berjalan pelan-pelan, tidak berhenti.'],
+    ['🐢🏆', 'Saat kelinci bangun, kura-kura sudah sampai di garis finis. Kura-kura menang!'],
+  ] },
+  { id: 'semut', cat: 'dongeng', e: '🦗', title: 'Semut dan Belalang', moral: 'rajinlah bekerja dan bersiap untuk nanti', pages: [
+    ['☀️🐜🌾', 'Musim panas, semut bekerja keras mengumpulkan makanan.'],
+    ['🦗🎻', 'Belalang hanya bernyanyi dan bermain sepanjang hari.'],
+    ['🐜🗣️', 'Semut berkata: ayo kumpulkan makanan untuk musim hujan nanti! Belalang tidak peduli.'],
+    ['🌧️❄️🦗', 'Musim hujan datang. Belalang kedinginan dan kelaparan.'],
+    ['🐜🍞🦗', 'Semut yang baik hati berbagi makanan. Belalang berjanji akan rajin bekerja.'],
+  ] },
+];
+const RATNA = { name: 'Bu Ratna', pitch: 0.05 };
+let bookCat = 'nabi', book = null, bookPg = 0;
+function openBooks() {
+  if (!playing) return;
+  renderBooks(); openModal('books');
+  say('Mau baca buku apa? Pilih sampulnya, ya!', { who: RATNA.name, pitch: RATNA.pitch, force: true });
+}
+function renderBooks() {
+  const tabs = $('#bookTabs'); tabs.innerHTML = '';
+  for (const [id, label] of BOOK_CATS) { const b = document.createElement('button'); b.className = 'chunky' + (id === bookCat ? ' sun' : ''); b.textContent = label; b.onclick = () => { SFX.tap(); bookCat = id; renderBooks(); }; tabs.appendChild(b); }
+  const list = $('#bookList'), read = save.booksRead || []; list.innerHTML = '';
+  for (const bk of BOOKS.filter((x) => x.cat === bookCat)) {
+    const b = document.createElement('button'); b.className = 'chunky cover'; b.innerHTML = '<span class="e"></span><span class="t"></span>';
+    b.querySelector('.e').textContent = bk.e; b.querySelector('.t').textContent = bk.title;
+    if (read.includes(bk.id)) { const d = document.createElement('span'); d.className = 'done'; d.textContent = '✅'; b.appendChild(d); }
+    b.onclick = () => { SFX.tap(); openBook(bk); }; list.appendChild(b);
+  }
+}
+function openBook(bk) { closeModal('books'); $('#bubble').hidden = true; book = bk; bookPg = 0; openModal('book'); renderPage(); }
+function renderPage() {
+  const [art, text] = book.pages[bookPg], last = bookPg === book.pages.length - 1;
+  $('#bookTitle').textContent = `${book.e} ${book.title}`; $('#bookPage').textContent = `${bookPg + 1} / ${book.pages.length}`;
+  $('#bookArt').textContent = art; $('#bookText').textContent = text;
+  $('#bookPrev').disabled = bookPg === 0; $('#bookNext').textContent = last ? '✅ Tamat' : 'Lanjut ▶';
+  if (hasTTS) speechSynthesis.cancel(); speak(text, { calm: true });
+}
+function finishBook() {
+  closeModal('book'); const first = !(save.booksRead || []).includes(book.id);
+  if (first) { save.booksRead = [...(save.booksRead || []), book.id]; save.stars += 1; updateStars(); floatText('+1 ⭐'); persist(); }
+  celebrate('small'); SFX.good();
+  say(`Tamat! Pesan cerita ini: ${book.moral}.${first ? ' Ini satu bintang karena kamu sudah selesai membaca!' : ''}`, { who: RATNA.name, pitch: RATNA.pitch, force: true });
+}
+$('#bookPrev').onclick = () => { if (bookPg > 0) { SFX.tap(); bookPg--; renderPage(); } };
+$('#bookNext').onclick = () => { SFX.tap(); if (bookPg < book.pages.length - 1) { bookPg++; renderPage(); } else finishBook(); };
+$('#bookSay').onclick = () => { SFX.tap(); if (hasTTS) speechSynthesis.cancel(); speak(book.pages[bookPg][1], { calm: true }); };
+$('#bookClose').onclick = () => { SFX.tap(); if (hasTTS) speechSynthesis.cancel(); closeModal('book'); openBooks(); };
+$('#booksClose').onclick = () => { SFX.tap(); closeModal('books'); $('#bubble').hidden = true; };
+
+/* ---------- lomba balap gokart melawan waktu ---------- */
+const race = { on: false, gate: 0, t0: 0 };
+W.RENT.kart = { name: 'Gokart', emoji: '🏎️', price: KOTA.RACE.price, min: 3 };
+W.RENT.bumper = { name: 'Bom-bom Car', emoji: '🚗', price: KOTA.BUMPER.price, min: 1 };
+function startBumper() {
+  if (veh.kind || ride || transit) return;
+  if (!payCoins(KOTA.BUMPER.price)) return;
+  hideAction(); climb.actBtn = null; const B = KOTA.BUMPER; teleport(B.cx, B.cz, 0);
+  veh.pass.clear(); Object.assign(veh, { kind: 'bumper', until: Date.now() + 60000, v: 0, yaw: 0, warned: true, climb: 0, bank: 0, fl: null });
+  veh.mesh = KOTA.makeBumper('#e8434b'); veh.mesh.position.set(0, VEH_MESH_Y[14], VEH_MESH_Z[14]); player.ch.root.add(veh.mesh); player.facing = 0;
+  showAction('⏹️ Selesai', () => endRide('done'));
+  say('Bom-bom car! Ayo tabrak-tabrakan!', { force: true });
+}
+function startRace() {
+  if (veh.kind || ride || transit) return;
+  if (!payCoins(KOTA.RACE.price)) return;
+  hideAction(); climb.actBtn = null;
+  const [x, z] = KOTA.RACE.start; teleport(x, z, 0);
+  veh.pass.clear(); Object.assign(veh, { kind: 'kart', until: Date.now() + 3 * 60000, v: 0, yaw: KOTA.RACE.yaw, warned: false, climb: 0, bank: 0, fl: null });
+  veh.mesh = KOTA.makeKart(); veh.mesh.position.set(0, VEH_MESH_Y[13], VEH_MESH_Z[13]); player.ch.root.add(veh.mesh);
+  player.facing = veh.yaw; view.yaw = veh.yaw + Math.PI;
+  Object.assign(race, { on: true, gate: 0, t0: performance.now() });
+  showAction('⏹️ Berhenti', () => { race.on = false; endRide('done'); });
+  [0, 0.6, 1.2].forEach((d) => tone(440, 0.2, { type: 'square', vol: 0.06, delay: d })); tone(880, 0.4, { type: 'square', vol: 0.07, delay: 1.8 });
+  say('Tiga, dua, satu... mulai! Lewati gerbang-gerbangnya!', { force: true });
+}
+function raceTick() {
+  if (!race.on) return; if (veh.kind !== 'kart') { race.on = false; return; }
+  const gates = KOTA.RACE.gates, g = gates[race.gate], t = (performance.now() - race.t0) / 1000;
+  const el = $('#vehChip'); el.hidden = false; el.textContent = `🏎️ ${race.gate < gates.length - 1 ? `Gerbang ${race.gate + 1}/${gates.length - 1}` : 'Ke FINIS!'} · ⏱️ ${t.toFixed(1)} dtk`;
+  if (Math.hypot(player.pos.x - g[0], player.pos.z - g[1]) > 9) return;
+  race.gate++; tone(880, 0.12, { type: 'triangle', vol: 0.1 }); tone(1175, 0.15, { type: 'triangle', vol: 0.1, delay: 0.1 });
+  if (race.gate < gates.length) { floatText(`🏁 ${race.gate}/${gates.length - 1}`); return; }
+  race.on = false;
+  const rec = !save.raceBest || t < save.raceBest, medal = t < 60 ? 'emas 🥇' : t < 80 ? 'perak 🥈' : 'perunggu 🥉';
+  if (rec) { save.raceBest = +t.toFixed(1); save.stars += 1; updateStars(); }
+  persist(); celebrate(rec ? 'big' : 'small', 'FINIS!');
+  say(`Finis! Waktumu ${t.toFixed(1)} detik. Medali ${medal}!${rec ? ' Rekor baru! Bonus satu bintang!' : ` Rekormu ${save.raceBest} detik. Coba lagi supaya lebih cepat!`}`, { force: true });
+  endRide('race');
 }
 
 /* ---------- berenang di laut sekitar dermaga ---------- */
@@ -4491,10 +5657,10 @@ function poseSpecial(ch, p, phase, holder) {
   ch.body.rotation.z = p === 2 && holder === player ? -para.bank : 0; // badan miring saat berbelok
   if (p === 2) { ch.body.rotation.x = 0.7; ch.shL.rotation.x = -0.3; ch.shR.rotation.x = -0.3; ch.shL.rotation.z = 1.0; ch.shR.rotation.z = -1.0; ch.hipL.rotation.x = 0.25 + Math.sin(elapsed * 2) * 0.12; ch.hipR.rotation.x = 0.25 - Math.sin(elapsed * 2) * 0.12; }
   if (p === 3) { ch.shL.rotation.x = -Math.PI / 2 + Math.sin(phase) * 1.4; ch.shR.rotation.x = -Math.PI / 2 - Math.sin(phase) * 1.4; ch.hipL.rotation.x = Math.sin(phase * 2) * 0.3; ch.hipR.rotation.x = -Math.sin(phase * 2) * 0.3; }
-  if (p >= 4 && p <= 9) { ch.hipL.rotation.x = ch.hipR.rotation.x = -1.45; ch.shL.rotation.x = ch.shR.rotation.x = p === 6 || p === 7 || p === 9 ? -0.6 : -1.2; ch.body.position.y = 0; }
+  if (p >= 4 && p <= 14) { ch.hipL.rotation.x = ch.hipR.rotation.x = -1.45; ch.shL.rotation.x = ch.shR.rotation.x = p === 6 || p === 7 || p === 9 ? -0.6 : -1.2; ch.body.position.y = 0; }
   // kendaraan teman (pemain sendiri memakai veh.mesh; penumpang tidak membawa kendaraan)
   if (holder !== player) {
-    const want = p === 4 || p === 5 || p === 8 ? p : 0;
+    const want = p === 4 || p === 5 || p === 8 || p === 11 || p === 13 || p === 14 ? p : 0;
     if (holder.vkind !== want) { if (holder.vmesh) ch.root.remove(holder.vmesh); holder.vmesh = null; holder.vkind = want; if (want) { holder.vmesh = makeVehMesh(want); holder.vmesh.position.set(0, VEH_MESH_Y[want], VEH_MESH_Z[want]); ch.root.add(holder.vmesh); } }
     if (want === 8 && holder.vmesh) holder.vmesh.userData.prop.rotation.z += 0.6;
   }
@@ -4528,7 +5694,7 @@ function paraTick(dt) {
   if (!para.phase) {
     if (!player.onGround && player.vy < -1 && player.peak >= top - 0.5 && player.y < player.peak - 1.2) {
       para.phase = 1; para.t = 0; tone(220, 0.9, { type: 'sawtooth', slide: 0.6, vol: 0.03 });
-      say('Wuuush! Kamu terjun! Tekan tombol lompat untuk membuka sayap.', { force: true });
+      say('Wuuush! Tekan lompat untuk buka sayap!', { force: true });
     }
     return;
   }
@@ -4543,16 +5709,16 @@ function openChute() {
 }
 function landPara() {
   para.phase = 0; SFX.good(); climb.cp = 0;
-  say('Hore, mendarat dengan lembut! Kamu terbang seperti malaikat!', { force: true });
+  say('Horee, mendarat mulus!', { force: true });
 }
 /* ---------- makan di kantin: nyawa bertambah sedikit ---------- */
 const eatSt = { on: false };
 const EAT_SEC = 5, FULL_MS = 2 * 60000;
-function eatFood(n, e, nm) {
+function eatFood(n, e, nm, heal = 0.5) {
   const now = Date.now();
   if (save.fullUntil && now < save.fullUntil) { say(`Kamu masih kenyang, lho! Main dulu, nanti makan lagi, ya.`, { who: n.name, pitch: n.pitch, force: true }); return; }
   say(`Ini ${nm}nya! Berdoa dulu, lalu makan pelan-pelan, ya.`, { who: n.name, pitch: n.pitch, force: true });
-  Object.assign(eatSt, { on: true, t: 0, e, nm, n, bite: 0 });
+  Object.assign(eatSt, { on: true, t: 0, e, nm, n, bite: 0, heal });
   $('#eatE').textContent = e; $('#eatLbl').textContent = `Makan ${nm}…`; $('#eatFill').style.width = '0%'; $('#eatBar').hidden = false;
 }
 function cancelEat() { if (!eatSt.on) return; eatSt.on = false; $('#eatBar').hidden = true; toast('🍽️ Makannya belum habis. Ayo makan lagi nanti.'); }
@@ -4565,8 +5731,9 @@ function eatTick(dt) {
   eatSt.on = false; setTimeout(() => ($('#eatBar').hidden = true), 900);
   save.fullUntil = Date.now() + FULL_MS;
   const mx = save.maxHp || 5, before = save.hp ?? 3;
-  if (before < mx) { save.hp = Math.min(mx, before + 0.5); floatText('+½ ❤️'); SFX.good(); say('Nyam, kenyang! Nyawamu bertambah sedikit. Terima kasih, Bu Sari!', { force: true }); }
-  else { SFX.good(); say('Nyam, kenyang! Nyawamu sudah penuh. Terima kasih, Bu Sari!', { force: true }); }
+  const who = eatSt.n?.name || 'Bu Sari', h = eatSt.heal || 0.5;
+  if (before < mx) { save.hp = Math.min(mx, before + h); floatText(h >= 1 ? `+${h} ❤️` : '+½ ❤️'); SFX.good(); say('Nyam nyam, kenyang!', { force: true }); }
+  else { SFX.good(); say('Nyam nyam, kenyang!', { force: true }); }
   persist(); updateVitals(); doEmote('😋');
 }
 
@@ -4574,7 +5741,7 @@ function eatTick(dt) {
 let nearNpc = null;
 function checkNpcs() {
   let near = null;
-  if (playing && !activeZone && !paused() && !me.down && !veh.kind && !ride) {
+  if (playing && !activeZone && !paused() && !me.down && !veh.kind && !ride && !transit) {
     let best = 3.6;
     for (const n of W.npcs) { if (!n.ch.root.visible) continue; const d = Math.hypot(n.pos.x - player.pos.x, n.pos.z - player.pos.z); if (d < best && Math.abs(n.y - player.y) < 1.6) { best = d; near = n; } }
   }
@@ -4596,7 +5763,12 @@ function talkTo(n) {
     ask: (q, opts, right, good, bad) => npcAsk(n, q, opts, (i) => {
       if (i === right) {
         let t = good; const last = npcStarAt.get(n.id) || -1e9;
-        if (performance.now() - last > 60000) { npcStarAt.set(n.id, performance.now()); save.stars += 1; persist(); updateStars(); floatText('+1 ⭐'); t += ' Ini satu bintang untukmu!'; }
+        if (performance.now() - last > 60000) {
+          npcStarAt.set(n.id, performance.now());
+          // di kota jawaban benar langsung jadi koin (lebih sedikit dari tukar bintang di Pulau Balok: mencari uang di kota lebih susah)
+          if (W.islandOf(n.pos.x, n.pos.z) === 'kota') { save.coins = (save.coins || 0) + CITY_PAY; persist(); updateVitals(); floatText(`+${CITY_PAY} 🪙`); t += CITY_PAY === 1 ? ' Ini satu koin untukmu!' : ` Ini ${CITY_PAY} koin untukmu!`; }
+          else { save.stars += 1; persist(); updateStars(); floatText('+1 ⭐'); t += ' Ini satu bintang untukmu!'; }
+        }
         SFX.good(); celebrate('small'); api.say(t); doEmote('😀');
       } else { SFX.soft(); api.say(bad); }
     }),
@@ -4605,6 +5777,9 @@ function talkTo(n) {
     eat: (e, nm) => eatFood(n, e, nm),
     hp: () => save.hp ?? 3,
     ship: () => ({ docked: W.ship.docked, left: W.ship.left }),
+    books: () => openBooks(),
+    tune: (k) => playTune(k),
+    siren: () => { for (let i = 0; i < 6; i++) tone(i % 2 ? 950 : 700, 0.28, { type: 'square', vol: 0.05, delay: i * 0.28 }); floatText('🚨'); },
   };
   if (n.talk) n.talk(api); else { n.li = ((n.li ?? -1) + 1) % n.lines.length; api.say(n.lines[n.li]); }
 }
@@ -4661,7 +5836,7 @@ function update(dt) {
     if (keys.has('a') || keys.has('arrowleft')) sx -= 1; if (keys.has('d') || keys.has('arrowright')) sx += 1;
     if (keys.has('q')) view.yaw += dt * 2; if (keys.has('e')) view.yaw -= dt * 2;
     let dx = 0, dz = 0, power = 1;
-    if (ride) { moving = false; } // penumpang: ikut pengemudi
+    if (ride || transit || care.on) { moving = false; } // penumpang: ikut pengemudi / kendaraan umum
     else if (veh.kind) { vehicleTick(dt, sx, sy); moving = Math.abs(veh.v) > 0.4; }
     else if (para.phase === 2) {
       // terbang dengan sayap: selalu melaju ke depan; kiri/kanan = berbelok, depan = lebih cepat, belakang = melayang pelan
@@ -4697,7 +5872,7 @@ function update(dt) {
       // batas pantai, kecuali sedang berdiri di dermaga/kapal
       const pd = Math.hypot(player.pos.x, player.pos.z); const lim = edgeR(player.pos.x, player.pos.z) - 2.2;
       const swimOk = W.inSwim(player.pos.x, player.pos.z);
-      if (pd > lim && !swimOk && !W.supported(player.pos.x, player.pos.z, player.y)) { player.pos.x *= lim / pd; player.pos.z *= lim / pd; }
+      if (!W.onLand(player.pos.x, player.pos.z, 2.2) && !swimOk && !W.supported(player.pos.x, player.pos.z, player.y)) W.clampLand(player.pos, 2.2);
       if (!swimOk && pd > lim && Math.hypot(player.pos.x - W.SWIM.x, player.pos.z - W.SWIM.z) < W.SWIM.r + 3 && player.y < 0.1 && !W.supported(player.pos.x, player.pos.z, player.y)) {
         const sx = player.pos.x - W.SWIM.x, sz = player.pos.z - W.SWIM.z, sd = Math.hypot(sx, sz); player.pos.x = W.SWIM.x + (sx / sd) * (W.SWIM.r - 0.1); player.pos.z = W.SWIM.z + (sz / sd) * (W.SWIM.r - 0.1);
       }
@@ -4712,13 +5887,15 @@ function update(dt) {
   if (player.jumpHeld && playing && !modal) player.jumpBuf = Math.max(player.jumpBuf, 0.05);
   tryJump(); player.jumpBuf = Math.max(0, player.jumpBuf - dt);
   if (para.phase === 2 && !player.onGround) player.vy += W.GRAV * dt; // sayap menahan gravitasi sebelum posisi dihitung
-  rideTick();
+  rideTick(); transitTick(); careTick(dt); raceTick(); islandCull(); cityAmbience(dt);
+  KOTA.updateCity(dt, player, () => { tone(440, 0.18, { type: 'square', vol: 0.05 }); tone(440, 0.18, { type: 'square', vol: 0.05, delay: 0.25 }); toast('🚗 Tiiin! Hati-hati di jalan, lewat trotoar ya!'); }, () => { if (veh.kind !== 'bumper') return; SFX.punch(); if (Math.random() < 0.3) floatText('💥 Duk!'); });
+  showTick(dt);
   if (veh.kind === 'jetski') { player.y = -0.35; player.vy = 0; player.onGround = true; player.standOn = null; player.peak = player.y; }
   else if (veh.kind === 'plane') { player.vy = 0; player.onGround = veh.fl.phase === 'ready'; player.standOn = null; player.peak = player.y; }
-  else if (!ride) { const landed = W.stepVertical(player, dt); if (landed) onLand(landed); }
+  else if (!ride && !transit && !care.on) { const landed = W.stepVertical(player, dt); if (landed) onLand(landed); }
   vehicleClock();
   paraTick(dt); swimTick(dt); eatTick(dt);
-  if (player.y < -0.6 && !veh.kind && !ride) fellInSea();
+  if (player.y < -0.6 && !veh.kind && !ride && !transit) fellInSea();
   if (playing) { worldPlay(dt); W.updateHide(player.pos.x, player.y, player.pos.z); }
   W.updateNpcs(dt, player); checkNpcs();
   lookTick(dt);
@@ -4726,6 +5903,10 @@ function update(dt) {
   ch.root.position.set(player.pos.x, vehCode() ? player.y + VEH_OFF[vehCode()] : swimming() ? player.y - SWIM_DROP : player.y, player.pos.z);
   let rd = player.facing - ch.root.rotation.y; rd = Math.atan2(Math.sin(rd), Math.cos(rd));
   ch.root.rotation.y += rd * Math.min(1, dt * 12);
+  // di roller coaster & kora-kora badan ikut miring (kanan-kiri, naik-turun)
+  const tp = transit?.pose || (care.on ? care.pose : null); ch.root.rotation.order = 'YXZ';
+  if (tp?.q) ch.root.quaternion.copy(tp.q);
+  else if (tp && (tp.pitch || tp.roll)) { ch.root.rotation.y = tp.yaw; ch.root.rotation.x = -(tp.pitch || 0); ch.root.rotation.z = tp.roll || 0; } else { ch.root.rotation.x = 0; ch.root.rotation.z = 0; }
   if (moving) player.phase += dt * 11; else player.phase *= Math.pow(0.001, dt);
   const sw = moving ? Math.sin(player.phase) * 0.7 : 0;
   const air = player.onGround ? 0 : -0.9;
@@ -4740,7 +5921,8 @@ function update(dt) {
   player.moving = moving; if (playing) sendMove(dt);
   // panah misi di kaki pemain + sorot cahaya di tujuan
   let mz = playing ? missionZone() : null;
-  if (playing && nightDanger()) { let bd = 1e9; for (const q of Object.values(zones)) { if (!isSafeZone(q)) continue; const d = Math.hypot(q.cx - player.pos.x, q.cz - player.pos.z); if (d < bd) { bd = d; mz = q; } } }
+  if (W.islandOf(player.pos.x, player.pos.z) === 'kota') { mz = null; if (playing && nightDanger()) { let bd = 1e9; for (const q of KOTA.safeSpots) { const d = Math.hypot(q.x - player.pos.x, q.z - player.pos.z); if (d < bd) { bd = d; mz = { cx: q.x, cz: q.z }; } } } }
+  else if (playing && nightDanger()) { let bd = 1e9; for (const q of Object.values(zones)) { if (!isSafeZone(q)) continue; const d = Math.hypot(q.cx - player.pos.x, q.cz - player.pos.z); if (d < bd) { bd = d; mz = q; } } }
   if (guide && beacon) {
     const show = !!mz && !activeZone && camMode === 'follow';
     beacon.visible = !!mz && !activeZone; if (mz) beacon.position.set(mz.cx, 30, mz.cz);
@@ -4788,7 +5970,7 @@ function update(dt) {
       rate = 30;
     } else {
       // orang ketiga: kamera di belakang & sedikit di atas, seluruh tubuh karakter terlihat
-      const flying = veh.kind === 'plane' || ride?.kind === 'plane';
+      const flying = veh.kind === 'plane' || ride?.kind === 'plane' || transit?.tok.id === 'coaster';
       let dist = view.dist * (aspect < 1 ? 1.3 : 1) * (flying ? 1.7 : 1);
       // kamera ikut naik setinggi pemain (menara, gedung, gunung); dihaluskan supaya tidak ikut terguncang saat melompat
       const cy0 = view.camY ?? player.y, gy = flying || player.onGround || player.y - cy0 > 3 ? player.y : Math.min(player.y, cy0); // lompatan kecil tidak menggoyang kamera
@@ -4813,11 +5995,12 @@ function update(dt) {
     camPos.lerp(target, k); camLook.lerp(look, k);
   }
   camera.position.copy(camPos); camera.lookAt(camLook);
+  if (shake > 0.01) { camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; shake *= Math.pow(0.002, dt); } // getar layar
   sun.target.position.copy(camLook); sun.target.position.y = Math.min(camLook.y, player.y + 2); sun.position.copy(sun.target.position).add(SUN_OFS); // bayangan tetap di sekitar pemain walau mendongak
   // waktu main
-  if (playing && document.visibilityState === 'visible' && modal !== 'rest') {
+  if (playing && document.visibilityState === 'visible' && modal !== 'rest' && !me.paused) {
     save.time.sec += dt; saveTick += dt;
-    if (saveTick > 5) { saveTick = 0; persist(); checkTime(); }
+    if (saveTick > 5) { saveTick = 0; captureCheckpoint(); persist(); checkTime(); }
   }
 }
 function loop() {
@@ -4835,9 +6018,14 @@ async function boot() {
   applyGraphics();
   const before = new Set(scene.children);
   buildIsland();
+  const groundB = scene.children.filter((o) => !before.has(o) && o.isInstancedMesh); // tanah Pulau Balok
+  const ctx = { scene, box, mat, BOX, canvasTex, rrect, FONT, makeCharacter, makeHat, faceTexture, emojiSprite, animated, burst, edgeR, tapRoots, onNpc: (n) => npcTap(n), pushTrees: (p) => pushTrees(p, 0.4) };
+  W.initWorld(ctx);
+  const beforeCity = new Set(scene.children);
+  KOTA.initCity(ctx); // Pulau Kota dibangun bersama, digabung terpisah supaya ringan
+  const cityRoots = scene.children.filter((o) => !beforeCity.has(o));
   buildLamps();
-  W.initWorld({ scene, box, mat, BOX, canvasTex, rrect, FONT, makeCharacter, makeHat, emojiSprite, animated, burst, edgeR, tapRoots, onNpc: (n) => npcTap(n), pushTrees: (p) => pushTrees(p, 0.4) });
-  const decor = scene.children.filter((o) => !before.has(o) && !o.isInstancedMesh && !clouds.includes(o));
+  const decor = scene.children.filter((o) => !before.has(o) && !o.isInstancedMesh && !clouds.includes(o) && !cityRoots.includes(o));
   buildMonument(); // Menara Kristal di tengah pulau
   buildFountain();
   zones.kebun = new Kebun(); zones.warna = new Warna(); zones.hewan = new Hewan(); zones.pola = new Pola();
@@ -4847,7 +6035,8 @@ async function boot() {
   // hiasan pulau + bagian lokasi yang diam digabung (objek yang bisa diketuk/bergerak tidak ikut)
   const moving = new Set(animated.map((a) => a.obj));
   for (const z of Object.values(zones)) moving.add(z.temp);
-  staticBatch([...decor, ...Object.values(zones).map((z) => z.group)], moving);
+  islandGfx.balok = [...staticBatch([...decor, ...Object.values(zones).map((z) => z.group)], moving), ...groundB, ...Object.values(zones).map((z) => z.group), ...decor.filter((o) => o !== W.kit.DYN && o.isGroup)];
+  islandGfx.kota = [...staticBatch(cityRoots, moving), ...cityRoots];
   player.ch = makeCharacter({ shirt: COLORS[save.avatar.shirt], pants: COLORS[save.avatar.pants], skin: SKINS[save.avatar.skin] });
   player.ch.root.rotation.y = Math.PI;
   scene.add(player.ch.root, marker); applyAvatar();
@@ -4864,11 +6053,11 @@ async function boot() {
   else setTimeout(() => { if (!net.online) onNetStatus('offline'); }, 2500);
   loop();
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { persist(); if (hasTTS) speechSynthesis.cancel(); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { captureCheckpoint(); persist(); if (hasTTS) speechSynthesis.cancel(); } });
 // untuk pengujian otomatis
 window.__pbSend = send;
 window.__pbSpeak = () => { const z = speakZone; const it = z?.items?.[z.idx]; return it ? { read: it.read, value: it.value, show: it.show, type: it.type, idx: z.idx, mode: srMode } : null; };
-window.__pbZ = () => zombies; window.__pbSpawn = () => spawnZombie(); window.__pbW = () => ({ phase: worldSt.phase, host: amZHost(), safe: worldSt.safe, rest: worldSt.rest, down: me.down, spec: spec.on, specName: $('#specName').textContent, chip: $('#phaseChip').textContent }); window.__pbHurt = () => { me.inv = 0; return hurtMe({ x: window.__pb.player.pos.x + 1, z: window.__pb.player.pos.z }); };
-window.__pbWorld = W; window.__pbClimb = climb; window.__pbEat = eatSt; window.__pbPara = para; window.__pbVeh = veh; window.__pbTalk = (i) => talkTo(W.npcs[i]);
+window.__pbKill = (id) => killZombie(id, net.id); window.__pbBoard = () => boardTransit(); window.__pbRent = (k) => rent(k); window.__pbAskRide = (nm) => { const r = [...remotes.values()].find((q) => q.name === nm); if (r) askRide(r); return !!r; }; window.__pbRemotes = () => [...remotes.values()].map((r) => ({ name: r.name, x: r.ch.root.position.x, y: r.ch.root.position.y, z: r.ch.root.position.z, seated: !!r.seated, vis: r.ch.root.visible })); window.__pbVeh = veh; window.__pbZHost = zHost; window.__pbZ = () => zombies; window.__pbSpawn = (k, at) => spawnZombie(k ?? 0, at); window.__pbNight = nightSt; window.__pbMe = me; window.__pbZT = () => ({ t: zTargets(), rest: worldSt.rest, safe: inSafe(player.pos.x, player.pos.z), y: player.y, down: me.down, playing, zone: !!activeZone }); window.__pbZTick = (dt) => { updateZombies(dt); updateCombat(dt); }; window.__pbWave = () => waveInfo(); window.__pbW = () => ({ phase: worldSt.phase, host: amZHost(), safe: worldSt.safe, rest: worldSt.rest, down: me.down, spec: spec.on, specName: $('#specName').textContent, chip: $('#phaseChip').textContent }); window.__pbHurt = () => { me.inv = 0; return hurtMe({ x: window.__pb.player.pos.x + 1, z: window.__pb.player.pos.z }); };
+window.__pbKota = KOTA; window.__pbTransit = () => transit; window.__pbCare = care; window.__pbWorld = W; window.__pbClimb = climb; window.__pbEat = eatSt; window.__pbPara = para; window.__pbVeh = veh; window.__pbTalk = (i) => talkTo(W.npcs[i]);
 window.__pb = { zones, player, save: () => save, walkTo, onTap, camera, view, stick, teleport, openMap: () => openMap(), speak, voices: () => idVoices, net, remotes, doLogin, doEmote, setCamMode, celebrate };
 boot();

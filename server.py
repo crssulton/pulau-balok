@@ -9,7 +9,7 @@ Hanya memakai pustaka bawaan Python (tanpa pip install):
 import asyncio, base64, hashlib, json, mimetypes, os, random, socket, sqlite3, ssl, struct, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(ROOT, 'data')
+DATA_DIR = os.environ.get('PB_DATA_DIR') or os.path.join(ROOT, 'data')  # PB_DATA_DIR: folder data lain (mis. untuk uji), data pemain asli tetap aman
 DB_PATH = os.path.join(DATA_DIR, 'pulau-balok.db')
 HTTP_PORT = int(os.environ.get('PB_PORT', sys.argv[1] if len(sys.argv) > 1 else 8080))
 HTTPS_PORT = int(os.environ.get('PB_HTTPS_PORT', HTTP_PORT + 363))  # 8080 -> 8443
@@ -109,7 +109,7 @@ class Store:
                 continue
             t = d.get('time') or {}
             out.append({'key': key, 'name': name, 'role': (d.get('avatar') or {}).get('role', ''), 'settings': d.get('settings') or {},
-                        'today': round((t.get('sec', 0) if t.get('date') == today_s else 0) / 60), 'stars': d.get('stars', 0),
+                        'today': round((t.get('sec', 0) if t.get('date') == today_s else 0) / 60), 'stars': d.get('stars', 0), 'coins': d.get('coins', 0),
                         'crystals': len(d.get('crystals') or []),
                         'zones': {z: {'level': v.get('level', 1), 'rounds': v.get('rounds', 0), 'first': v.get('first', 0)} for z, v in (d.get('zones') or {}).items()}})
         return out
@@ -380,14 +380,16 @@ async def reveal(r):
 
 # ---------------------------------------------------------------- siang/malam & zombie
 # Jam dunia dipegang server supaya semua perangkat siang/malam bersamaan.
-world = {'phase': 'day', 'start': 0, 'ends': 0, 'safe': None, 'safeEnds': 0, 'rest': 0}
+world = {'phase': 'day', 'start': 0, 'ends': 0, 'safe': None, 'safeEnds': 0, 'rest': 0, 'hold': False}
+boss = {'isl': set(), 't': 0}  # pulau tempat Raja Zombie hidup (dari laporan tuan rumah zombie)
+island_of = lambda z: 'kota' if float(z or 0) > 165 else 'balok'  # sama dengan islandOf() di world.js
 ZONE_IDS = ['kebun', 'warna', 'hewan', 'pola', 'bentuk', 'ikan', 'musik', 'kembar', 'ukuran', 'rasa', 'tulis', 'mtk', 'gambar', 'puzzle', 'huruf', 'angka', 'iqro']
 zhost = {'id': None}
 
 
 def world_msg():
     return {'t': 'world', 'phase': world['phase'], 'start': world['start'], 'ends': world['ends'], 'now': now_ms(),
-            'safe': world['safe'], 'safeEnds': world['safeEnds'], 'rest': world['rest'], 'cfg': store.config()}
+            'safe': world['safe'], 'safeEnds': world['safeEnds'], 'rest': world['rest'], 'hold': world['hold'], 'cfg': store.config()}
 
 
 def rotate_safe():
@@ -403,7 +405,8 @@ def rotate_safe():
 def set_phase(phase):
     cfg = store.config()
     mins = cfg['nightMin'] if phase == 'night' else cfg['dayMin']
-    world.update(phase=phase, start=now_ms(), ends=now_ms() + int(float(mins) * 60000), rest=0)
+    world.update(phase=phase, start=now_ms(), ends=now_ms() + int(float(mins) * 60000), rest=0, hold=False)
+    boss.update(isl=set(), t=0)
     if phase == 'night':
         world['safe'] = None
         rotate_safe()
@@ -417,6 +420,16 @@ async def world_loop():
         await asyncio.sleep(1)
         cfg = store.config()
         if cfg.get('cycle', True) and now_ms() >= world['ends']:
+            # pagi otomatis ditahan selama Raja Zombie masih hidup, kecuali semua pemain sudah kehabisan nyawa
+            # hanya bila Raja berada di pulau yang sama dengan pemain yang masih hidup & tidak jeda
+            ps = players()
+            alive_isl = {island_of((c.pos or {}).get('z')) for c in ps if not c.down and (c.pos or {}).get('p') != 99}
+            boss_on = bool(boss['isl'] & alive_isl) and now_ms() - boss['t'] < 6000  # laporan basi (tuan rumah hilang) tidak menahan
+            if world['phase'] == 'night' and boss_on and now_ms() - world['ends'] < 300000:  # pengaman: paling lama 5 menit tambahan
+                if not world['hold']:
+                    world['hold'] = True
+                    await broadcast(world_msg())
+                continue
             set_phase('night' if world['phase'] == 'day' else 'day')
             await broadcast(world_msg())
             continue
@@ -441,7 +454,9 @@ async def world_loop():
 
 async def elect_zhost():
     """Satu perangkat menjalankan simulasi zombie untuk semua (yang paling lama tersambung)."""
-    ps = sorted(c.id for c in players())
+    # utamakan perangkat yang sedang aktif bermain (bukan jeda / layar mati, kode pose 99)
+    act = sorted(c.id for c in players() if (c.pos or {}).get('p') != 99)
+    ps = act or sorted(c.id for c in players())
     new = ps[0] if ps else None
     if new != zhost['id']:
         zhost['id'] = new
@@ -489,7 +504,8 @@ async def on_message(c, m):
         return
     if t == 'names':
         return await c.send({'t': 'names', 'list': store.roster()})
-    if not c.name:
+    # menu orang tua boleh dibuka dari layar pilih pemain (sudah diverifikasi soal di perangkat), sebelum memilih karakter
+    if not c.name and t not in ('family', 'setPlayer', 'giveCoins', 'setConfig', 'setPhase', 'zspawn', 'deletePlayer'):
         return
     if t == 'save':
         data = m.get('data')
@@ -500,8 +516,14 @@ async def on_message(c, m):
                 c.avatar, c.stars = av, st
                 await broadcast({'t': 'pinfo', 'id': c.id, 'avatar': av, 'stars': st}, skip=c)
     elif t == 'move':
-        c.pos = {k: m.get(k, 0) for k in ('x', 'z', 'y', 'f', 'm', 'p', 'pc')}  # p: 1 terjun, 2 sayap, 3 berenang, 4-9 kendaraan; pc: ada penumpang
+        was_paused = (c.pos or {}).get('p') == 99
+        c.pos = {k: m.get(k, 0) for k in ('x', 'z', 'y', 'f', 'm', 'p', 'pc', 'fm')}  # fm: gerakan bela diri terakhir  # p: 1 terjun, 2 sayap, 3 berenang, 4-9 kendaraan; pc: ada penumpang
+        for k in ('rd', 'tk'):  # rd: menumpang pengemudi "id:kursi:jenis"; tk: token wahana kota (posisi dihitung di tiap perangkat)
+            if m.get(k) is not None and len(json.dumps(m[k])) < 300:
+                c.pos[k] = m[k]
         await broadcast({'t': 'move', 'id': c.id, **c.pos}, skip=c)
+        if was_paused != (c.pos.get('p') == 99):  # mulai/berhenti jeda: tuan rumah zombie dipilih ulang
+            await elect_zhost()
     elif t == 'poke':  # pukulan main-main antarpemain (nyawa tidak berkurang): semua melihat efeknya
         to = m.get('to')
         if to in clients:
@@ -561,6 +583,18 @@ async def on_message(c, m):
                 if o.key == key:
                     await o.send({'t': 'psettings', 'settings': st})
         await c.send({'t': 'family', 'players': store.family(), 'config': store.config()})
+    elif t == 'giveCoins':  # orang tua memberi koin; online: dikirim ke perangkatnya (yang menyimpan), offline: ditambahkan di data server
+        key, n = name_key(m.get('name', '')), int(m.get('n') or 0)
+        rec = store.player(key)
+        if rec and 0 < n <= 500:
+            on = [o for o in players() if o.key == key]
+            if on:
+                await on[0].send({'t': 'gift', 'n': n})
+            else:
+                rec['data']['coins'] = int(rec['data'].get('coins') or 0) + n
+                rec['data']['updated'] = now_ms()
+                store.save_player(key, rec['name'], rec['data'])
+        await c.send({'t': 'family', 'players': store.family(), 'config': store.config()})
     elif t == 'setConfig':
         cfg = m.get('config') or {}
         if 'maxPlayers' in cfg:
@@ -592,14 +626,18 @@ async def on_message(c, m):
         if m.get('phase') in ('day', 'night'):
             set_phase(m['phase'])
             await broadcast(world_msg())
-            await broadcast({'t': 'notice', 'msg': f"{c.name} mengubah waktu menjadi {'malam' if m['phase'] == 'night' else 'siang'}!"})
+            if not c.name:  # dari layar pilih pemain: perangkat ini belum termasuk pemain, kirim langsung
+                await c.send(world_msg())
+            await broadcast({'t': 'notice', 'msg': f"{c.name or 'Orang tua'} mengubah waktu menjadi {'malam' if m['phase'] == 'night' else 'siang'}!"})
     elif t == 'zspawn':  # orang tua menambah zombie: diteruskan ke tuan rumah zombie
         h = clients.get(zhost['id'])
-        if h:
-            await h.send({'t': 'zspawn', 'n': max(1, min(15, int(m.get('n') or 5)))})
-            await broadcast({'t': 'notice', 'msg': f'{c.name} menambah zombie! Siap-siap!'})
-    elif t in ('zstate', 'zdead'):  # dari tuan rumah zombie ke semua
-        if c.id == zhost['id']:
+        if h and world['phase'] == 'night':  # siang tidak ada zombie
+            await h.send({'t': 'zspawn', 'n': max(1, min(200, int(m.get('n') or 5)))})
+            await broadcast({'t': 'notice', 'msg': f"{c.name or 'Orang tua'} menambah zombie! Siap-siap!"})
+    elif t in ('zstate', 'zdead', 'zspit', 'zslam', 'zfx'):  # dari tuan rumah zombie ke semua (posisi, kalah, ludah, hentakan)
+        if c.id == zhost['id'] and t == 'zstate' and world['phase'] == 'night':
+            boss.update(isl={island_of(e[3]) for e in (m.get('list') or []) if isinstance(e, list) and len(e) > 3 and e[1] == 5}, t=now_ms())
+        if c.id == zhost['id'] and (t != 'zstate' or world['phase'] == 'night'):  # siang: posisi zombie tidak diteruskan lagi
             await broadcast({**m, 'from': c.id}, skip=c)
     elif t == 'zhit':  # pukulan/tembakan pemain diteruskan ke tuan rumah zombie
         h = clients.get(zhost['id'])
