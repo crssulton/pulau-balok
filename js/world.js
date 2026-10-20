@@ -155,14 +155,14 @@ function batchGroup(root) {
   const inv = root.matrixWorld.clone().invert(); const groups = new Map(); const rm = [];
   root.traverse((o) => {
     if (!o.isMesh || o.isInstancedMesh || o.geometry !== K.BOX || Array.isArray(o.material) || o.material.map || o.material.transparent) return;
-    const key = o.material.uuid + (o.castShadow ? ':s' : '');
-    if (!groups.has(key)) groups.set(key, { mat: o.material, cast: o.castShadow, list: [] });
-    groups.get(key).list.push(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); rm.push(o);
+    const plain = K.plainMats.has(o.material), key = (plain ? 'plain' : o.material.uuid) + (o.castShadow ? ':s' : ''); // bahan polos digabung lintas warna
+    if (!groups.has(key)) groups.set(key, { mat: plain ? K.INST_MAT : o.material, plain, cast: o.castShadow, list: [], cols: [] });
+    const g = groups.get(key); g.list.push(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); g.cols.push(o.material.color); rm.push(o);
   });
   for (const o of rm) o.parent.remove(o);
   for (const g of groups.values()) {
     const im = new THREE.InstancedMesh(K.BOX, g.mat, g.list.length);
-    g.list.forEach((m, i) => im.setMatrixAt(i, m));
+    g.list.forEach((m, i) => { im.setMatrixAt(i, m); if (g.plain) im.setColorAt(i, g.cols[i]); });
     im.castShadow = g.cast; im.receiveShadow = true; im.computeBoundingSphere(); root.add(im);
   }
 }

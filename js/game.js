@@ -250,7 +250,7 @@ const canvas = $('#c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 window.__pbRenderer = renderer;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 const scene = new THREE.Scene();
 const SKY = new THREE.Color('#8fd3ff');
 scene.background = SKY;
@@ -263,17 +263,80 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight('#fff3d6', 1.7);
 sun.position.set(16, 30, 14);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+const TOUCH = window.matchMedia?.('(pointer: coarse)').matches; // tablet/HP: peta bayangan lebih kecil
+sun.shadow.mapSize.setScalar(TOUCH ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 90 });
 sun.shadow.bias = -0.0008;
 scene.add(sun, sun.target);
 const SUN_OFS = new THREE.Vector3(16, 30, 14);
 
+// resolusi maks 1.5x (layar retina tetap tajam); turun otomatis bila frame lambat, naik lagi bila lancar.
+// HP lemah (mis. RAM 2 GB) atau yang tetap lambat di resolusi 1x masuk "mode hemat": tanpa bayangan,
+// resolusi boleh sampai 0.7x, 30 fps stabil, benda kecil yang jauh tidak digambar, jarak pandang lebih pendek (kabut). Gameplay tidak berubah. Diingat per perangkat.
+const LOW_KEY = 'pb-gfx-low';
+const gfx = { max: 1, pr: 1, acc: 0, n: 0, good: 0, bad: 0, hold: 0, last: 0, t0: performance.now(),
+  low: (() => { try { const v = localStorage.getItem(LOW_KEY); if (v != null) return v === '1'; } catch (e) { /* tanpa storage */ } return (navigator.deviceMemory || 8) <= 2; })() };
+const liteGfx = () => dev.lite || gfx.low;
 function applyGraphics() {
-  const lite = dev.lite;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, lite ? 1 : 2));
+  const lite = liteGfx();
+  gfx.max = Math.min(window.devicePixelRatio || 1, dev.lite ? 1 : 1.5); gfx.pr = gfx.low ? Math.min(1, gfx.max) : gfx.max;
+  gfx.acc = gfx.n = gfx.good = gfx.bad = 0;
+  renderer.setPixelRatio(gfx.pr);
   sun.castShadow = !lite;
+  scene.fog.near = gfx.low ? 45 : 90; scene.fog.far = gfx.low ? 140 : 250; camera.far = gfx.low ? 150 : 520;
+  setDetail(lite);
   resize();
+}
+// mode hemat: benda kecil yang jauh tidak digambar (dipindah ke layer 1, kamera hanya melihat layer 0).
+// Memakai layers, bukan visible, supaya tidak bentrok dengan logika game yang menyembunyikan/menampilkan benda.
+const detail = { list: [], i: 0, on: false };
+function collectDetails() {
+  scene.updateMatrixWorld(true);
+  scene.traverse((o) => {
+    if (!(o.isMesh || o.isSprite) || o.userData.ground || o.userData.sky) return;
+    let r;
+    if (o.isInstancedMesh) { if (!o.boundingSphere) return; r = o.boundingSphere.radius; }
+    else { if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); r = o.geometry.boundingSphere.radius * o.matrixWorld.getMaxScaleOnAxis(); }
+    if (r > 6) return;
+    const far = 30 + r * 8; detail.list.push({ o, far2: far * far, hid: false });
+  });
+}
+function detailTick() {
+  const L = detail.list; if (!detail.on || !L.length) return;
+  const cp = camera.position;
+  for (let k = Math.min(L.length, 400); k > 0; k--) {
+    const d = L[detail.i]; detail.i = (detail.i + 1) % L.length;
+    const o = d.o; let x, y, z;
+    if (o.isInstancedMesh) ({ x, y, z } = o.boundingSphere.center); else { const e = o.matrixWorld.elements; x = e[12]; y = e[13]; z = e[14]; }
+    const hid = (x - cp.x) ** 2 + (y - cp.y) ** 2 + (z - cp.z) ** 2 > d.far2;
+    if (hid !== d.hid) { d.hid = hid; o.layers.set(hid ? 1 : 0); }
+  }
+}
+function setDetail(on) {
+  detail.on = on;
+  if (!on) for (const d of detail.list) if (d.hid) { d.hid = false; d.o.layers.set(0); }
+}
+function setLowGfx(on) {
+  gfx.low = on; try { localStorage.setItem(LOW_KEY, on ? '1' : '0'); } catch (e) { /* tanpa storage */ }
+  applyGraphics();
+}
+function autoRes(raw) {
+  if (!playing) { gfx.t0 = performance.now(); return; } // layar judul & awal main (shader baru dimuat) tidak dihitung
+  if (document.visibilityState !== 'visible' || raw > 0.5 || performance.now() - gfx.t0 < 6000) return;
+  gfx.acc += raw; gfx.n++;
+  if (gfx.acc < 2) return;
+  const ms = (gfx.acc / gfx.n) * 1000; gfx.acc = gfx.n = 0;
+  // mode hemat dibatasi 30 fps, jadi ambang "lambat/lancar" ikut menyesuaikan; setelah turun, tunggu 1 menit sebelum naik lagi
+  const floor = gfx.low ? 0.7 : Math.min(1, gfx.max), slow = gfx.low ? 40 : 26, ok = gfx.low ? 35 : 18, now = performance.now();
+  let pr = gfx.pr;
+  if (ms > slow && pr > floor) { pr = Math.max(floor, pr - (gfx.low ? 0.1 : 0.25)); gfx.good = 0; gfx.hold = now + 60000; }
+  else if (ms < ok && pr < gfx.max && now > (gfx.hold || 0)) { if (++gfx.good >= 5) { pr = Math.min(gfx.max, pr + (pr < 1 ? 0.1 : 0.25)); gfx.good = 0; } }
+  else gfx.good = 0;
+  pr = Math.round(pr * 100) / 100;
+  if (pr !== gfx.pr) { gfx.pr = pr; renderer.setPixelRatio(pr); resize(); }
+  // tetap lambat walau resolusi sudah paling rendah -> mode hemat (diingat; mematikan "Mode ringan" mengembalikan grafis penuh)
+  gfx.bad = ms > 30 && pr <= floor ? gfx.bad + 1 : 0;
+  if (!gfx.low && !dev.lite && gfx.bad >= 2) setLowGfx(true);
 }
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -283,11 +346,25 @@ function resize() {
 window.addEventListener('resize', resize);
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
-const matCache = new Map();
+// kotak bergambar: sisi polos (bahan 0) + sisi bergambar (bahan 1) dalam 2 grup -> 2 draw call, bukan 6
+const FACE_GEO = {};
+function faceGeo(faces = [4]) {
+  const k = faces.join();
+  if (!FACE_GEO[k]) {
+    const g = BOX.clone(), src = BOX.index.array, a = [], b = [];
+    for (let f = 0; f < 6; f++) (faces.includes(f) ? b : a).push(...src.slice(f * 6, f * 6 + 6));
+    g.setIndex([...a, ...b]); g.clearGroups(); g.addGroup(0, a.length, 0); g.addGroup(a.length, b.length, 1);
+    FACE_GEO[k] = g;
+  }
+  return FACE_GEO[k];
+}
+const faceBox = (side, face, faces) => new THREE.Mesh(faceGeo(faces), [side, face]);
+const matCache = new Map(), plainMats = new Set(); // plainMats: bahan polos bersama (warnanya tidak pernah diubah)
 function mat(color) {
-  if (!matCache.has(color)) matCache.set(color, new THREE.MeshLambertMaterial({ color }));
+  if (!matCache.has(color)) { const m = new THREE.MeshLambertMaterial({ color }); matCache.set(color, m); plainMats.add(m); }
   return matCache.get(color);
 }
+const INST_MAT = new THREE.MeshLambertMaterial({ color: '#ffffff' }); // satu bahan untuk semua balok gabungan, warna per balok
 function box(w, h, d, color, x = 0, y = 0, z = 0, parent = null, shadow = true) {
   const m = new THREE.Mesh(BOX, typeof color === 'string' ? mat(color) : color);
   m.scale.set(w, h, d); m.position.set(x, y, z);
@@ -325,7 +402,7 @@ function glyphTex(text, bg, fg, size = 170) {
 function glyphBlock(text, color, size = 0.9) {
   const tex = glyphTex(text, color, '#1d2b53');
   const side = mat(color); const face = new THREE.MeshLambertMaterial({ map: tex });
-  const m = new THREE.Mesh(BOX, [side, side, face, side, face, side]);
+  const m = faceBox(side, face, [2, 4]);
   m.scale.setScalar(size); m.castShadow = true; m.receiveShadow = true;
   return m;
 }
@@ -341,7 +418,7 @@ function makeBoard(parent, x, z, w = 2.0, h = 1.5, y = 2.9) {
   box(0.2, y - h / 2 + 0.1, 0.2, '#8a5a35', x, (y - h / 2 + 0.1) / 2, z - 0.1, parent);
   const tex = canvasTex(Math.round(160 * w), Math.round(160 * h), () => {});
   const wood = mat('#c98f52'); const face = new THREE.MeshLambertMaterial({ map: tex });
-  const b = new THREE.Mesh(BOX, [wood, wood, wood, wood, face, wood]); b.scale.set(w, h, 0.14); b.position.set(x, y, z); b.castShadow = true; parent.add(b);
+  const b = faceBox(wood, face); b.scale.set(w, h, 0.14); b.position.set(x, y, z); b.castShadow = true; parent.add(b);
   return tex;
 }
 // lukis bentuk geometri di kanvas (dipakai Taman Bentuk)
@@ -513,23 +590,25 @@ function buildLandmarks() {
     for (let i = 0; i < 40; i++) { const a = rand(0, 6.28), r = rand(2.5, 5); box(0.26, 0.26, 0.26, pick(['#ff8fc0', '#ffd23a', '#e8434b', '#9a62e0', '#ffffff']), x + Math.cos(a) * r, 0.3, z + Math.sin(a) * r, scene, false); }
     colliders.push({ x, z, r: 1.4 }); }
 }
-// gabungkan balok hiasan yang diam menjadi InstancedMesh per bahan: ribuan draw call jadi puluhan saja
+// gabungkan balok hiasan yang diam menjadi InstancedMesh: bahan polos digabung lintas warna (warna per balok),
+// dipecah per petak 32x32 supaya yang di luar layar / di luar area bayangan tidak digambar
 function staticBatch(roots, skip = new Set()) {
   scene.updateMatrixWorld(true);
-  const groups = new Map(); const remove = [];
+  const groups = new Map(); const remove = []; const CH = 32;
   for (const root of roots) root.traverse((o) => {
     if (!o.isMesh || o.isInstancedMesh || (o.geometry !== BOX && !o.geometry.userData.batch) || Array.isArray(o.material) || o.material.map || o.material.transparent || o.material === HIT_MAT) return;
     for (let q = o; q; q = q.parent) if (skip.has(q) || q.userData?.tap || q.userData?.dynamic) return;
-    const key = o.geometry.uuid + o.material.uuid + (o.castShadow ? ':s' : ''); // geometri bersama (kotak, silinder, kubah) ikut digabung
-    if (!groups.has(key)) groups.set(key, { geo: o.geometry, mat: o.material, cast: o.castShadow, list: [] });
-    groups.get(key).list.push(o.matrixWorld.clone()); remove.push(o);
+    const plain = plainMats.has(o.material), e = o.matrixWorld.elements;
+    const key = o.geometry.uuid + (plain ? 'plain' : o.material.uuid) + (o.castShadow ? ':s' : '') + '@' + Math.floor(e[12] / CH) + ',' + Math.floor(e[14] / CH);
+    if (!groups.has(key)) groups.set(key, { geo: o.geometry, mat: plain ? INST_MAT : o.material, plain, cast: o.castShadow, list: [] });
+    groups.get(key).list.push(o); remove.push(o);
   });
   for (const o of remove) o.parent.remove(o);
   const made = [];
   for (const g of groups.values()) {
     const im = new THREE.InstancedMesh(g.geo, g.mat, g.list.length);
-    g.list.forEach((m, i) => im.setMatrixAt(i, m));
-    im.castShadow = g.cast; im.receiveShadow = true; im.frustumCulled = false; scene.add(im); made.push(im);
+    g.list.forEach((o, i) => { im.setMatrixAt(i, o.matrixWorld); if (g.plain) im.setColorAt(i, o.material.color); });
+    im.castShadow = g.cast; im.receiveShadow = true; im.matrixAutoUpdate = false; im.computeBoundingSphere(); scene.add(im); made.push(im);
   }
   return made;
 }
@@ -551,35 +630,66 @@ function islandCull() {
   if (showK !== islandGfx.showK) { islandGfx.showK = showK; for (const o of islandGfx.kota) o.visible = showK; }
 }
 const waterMat = new THREE.MeshLambertMaterial({ color: '#4cb4ea' });
+// tanah petak 1x1: hanya sisi yang terlihat (atas + tepi luar) dalam satu mesh per petak 34x34,
+// jadi bagian di luar layar tidak digambar. cl.cols = warna lapisan atas ke bawah (0..-1, -1..-2, -2..-3)
+function buildGround(cells) {
+  const CH = 34, has = new Set(cells.map((cl) => cl.x + ',' + cl.z)), chunks = new Map();
+  const g = new THREE.Group(); g.userData.ground = true;
+  const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const quad = (ch, pts, n, col) => {
+    const [a, b, cc] = pts; // urutan sudut dibalik bila menghadap ke dalam
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = cc[0] - a[0], vy = cc[1] - a[1], vz = cc[2] - a[2];
+    if ((uy * vz - uz * vy) * n[0] + (uz * vx - ux * vz) * n[1] + (ux * vy - uy * vx) * n[2] < 0) pts.reverse();
+    const i0 = ch.pos.length / 3;
+    for (const p of pts) { ch.pos.push(...p); ch.nor.push(...n); ch.col.push(col.r, col.g, col.b); }
+    ch.idx.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);
+  };
+  for (const cl of cells) {
+    const key = Math.floor(cl.x / CH) + ',' + Math.floor(cl.z / CH);
+    if (!chunks.has(key)) chunks.set(key, { pos: [], nor: [], col: [], idx: [] });
+    const ch = chunks.get(key), x0 = cl.x - 0.5, x1 = cl.x + 0.5, z0 = cl.z - 0.5, z1 = cl.z + 0.5;
+    quad(ch, [[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]], [0, 1, 0], cl.cols[0]);
+    for (const [dx, dz] of SIDES) {
+      if (has.has(cl.x + dx + ',' + (cl.z + dz))) continue;
+      cl.cols.forEach((col, k) => {
+        const y1 = -k, y0 = -k - 1;
+        const pts = dx ? [[cl.x + dx / 2, y0, z0], [cl.x + dx / 2, y0, z1], [cl.x + dx / 2, y1, z1], [cl.x + dx / 2, y1, z0]]
+          : [[x0, y0, cl.z + dz / 2], [x1, y0, cl.z + dz / 2], [x1, y1, cl.z + dz / 2], [x0, y1, cl.z + dz / 2]];
+        quad(ch, pts, [dx, 0, dz], col);
+      });
+    }
+  }
+  const gm = new THREE.MeshLambertMaterial({ vertexColors: true });
+  for (const ch of chunks.values()) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(ch.pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(ch.nor, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(ch.col, 3));
+    geo.setIndex(ch.idx); geo.computeBoundingSphere();
+    const m = new THREE.Mesh(geo, gm); m.receiveShadow = true; m.matrixAutoUpdate = false; g.add(m);
+  }
+  return g;
+}
 function buildIsland() {
   const cells = [];
   for (let x = -R - 3; x <= R + 3; x++) for (let z = -R - 3; z <= R + 3; z++) {
     const d = Math.hypot(x, z); const e = edgeR(x, z);
     if (d < e) cells.push({ x, z, d, e });
   }
-  const top = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ color: '#ffffff' }), cells.length);
   // tanah bawah hanya di tepi pantai (bagian dalam tidak pernah terlihat) supaya ringan
   const shore = cells.filter((cl) => cl.d > cl.e - 4);
-  const under = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ color: '#ffffff' }), shore.length * 2);
-  top.receiveShadow = true; under.receiveShadow = true;
-  const m4 = new THREE.Matrix4(); const c = new THREE.Color();
-  cells.forEach((cl, i) => {
-    m4.makeTranslation(cl.x, -0.5, cl.z); top.setMatrixAt(i, m4);
+  const c = new THREE.Color();
+  cells.forEach((cl) => {
     let col; const beach = cl.d > cl.e - 2.8;
     if (beach) col = cl.d > cl.e - 1.2 ? '#f2d993' : '#f5e2a6';
     else if (cl.d < 5) col = (cl.x + cl.z) % 2 === 0 ? '#f3e7c6' : '#eadbb4';
     else if (onPath(cl.x, cl.z)) col = '#e9d3a0';
     else col = (Math.random() < 0.5) ? '#67c25a' : '#5fb953';
     c.set(col); if (col.startsWith('#6') || col.startsWith('#5')) c.offsetHSL(0, 0, rand(-0.025, 0.025));
-    top.setColorAt(i, c);
+    cl.cols = [c.clone()];
   });
-  shore.forEach((cl, i) => {
-    m4.makeTranslation(cl.x, -1.5, cl.z); under.setMatrixAt(i * 2, m4);
-    under.setColorAt(i * 2, c.set(cl.d > cl.e - 2.8 ? '#e0c27a' : '#9b6b43'));
-    m4.makeTranslation(cl.x, -2.5, cl.z); under.setMatrixAt(i * 2 + 1, m4);
-    under.setColorAt(i * 2 + 1, c.set('#8b6a4b'));
-  });
-  scene.add(top, under);
+  for (const cl of shore) cl.cols.push(new THREE.Color(cl.d > cl.e - 2.8 ? '#e0c27a' : '#9b6b43'), new THREE.Color('#8b6a4b'));
+  scene.add(buildGround(cells));
   const water = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), waterMat); // laut cukup luas untuk dua pulau
   water.rotation.x = -Math.PI / 2; water.position.y = -0.85; water.receiveShadow = true; scene.add(water);
   buildLandmarks();
@@ -632,17 +742,26 @@ function buildIsland() {
       const f = Math.sin(t * 18 + ph) * 0.9; wl.rotation.z = f; wr.rotation.z = -f;
     } });
   }
-  // awan
+  // awan: semua balok awan dalam satu InstancedMesh (1 draw call), digeser tiap frame oleh cloudTick
+  let nb = 0;
   for (let i = 0; i < 24; i++) {
-    const g = new THREE.Group();
-    const n = randi(3, 5);
-    for (let k = 0; k < n; k++) box(rand(2, 4), rand(1, 1.6), rand(2, 3), '#ffffff', k * 1.8 - n, rand(-0.3, 0.3), rand(-0.6, 0.6), g, false);
-    g.position.set(rand(-150, 150), rand(18, 30), rand(-130, 100));
-    g.userData.speed = rand(0.4, 0.9);
-    scene.add(g); clouds.push(g);
+    const n = randi(3, 5), parts = [];
+    for (let k = 0; k < n; k++) parts.push([rand(2, 4), rand(1, 1.6), rand(2, 3), k * 1.8 - n, rand(-0.3, 0.3), rand(-0.6, 0.6)]);
+    const c = { x: rand(-150, 150), y: rand(18, 30), z: rand(-130, 100), parts }; c.speed = rand(0.4, 0.9);
+    clouds.push(c); nb += n;
   }
+  cloudMesh = new THREE.InstancedMesh(BOX, mat('#ffffff'), nb); cloudMesh.frustumCulled = false; cloudMesh.receiveShadow = true; cloudMesh.userData.sky = true;
+  scene.add(cloudMesh); cloudTick(0);
 }
-const clouds = [];
+const clouds = []; let cloudMesh = null;
+function cloudTick(dt) {
+  const m4 = cloudTick.m4 ||= new THREE.Matrix4(); let i = 0;
+  for (const c of clouds) {
+    c.x += c.speed * dt; if (c.x > 100) c.x = -100;
+    for (const [w, h, d, x, y, z] of c.parts) cloudMesh.setMatrixAt(i++, m4.makeScale(w, h, d).setPosition(c.x + x, c.y + y, c.z + z));
+  }
+  cloudMesh.instanceMatrix.needsUpdate = true;
+}
 
 /* =========================================================
    KARAKTER BALOK
@@ -686,7 +805,7 @@ function makeCharacter({ shirt, pants, skin, hair = '#3b2a20', longHair = false,
   };
   const shL = arm(-0.74), shR = arm(0.74);
   const head = new THREE.Group(); head.position.set(0, 2.0, 0); body.add(head);
-  const hm = new THREE.Mesh(BOX, [m.skin, m.skin, m.skin, m.skin, m.face, m.skin]);
+  const hm = faceBox(m.skin, m.face);
   hm.scale.setScalar(0.86); hm.position.y = 0.46; hm.castShadow = true; head.add(hm);
   part(0.92, 0.22, 0.92, m.hair, 0, 0.92, 0, head);
   part(0.92, 0.62, 0.2, m.hair, 0, 0.62, -0.38, head);
@@ -895,6 +1014,7 @@ function onTap(cx, cy) {
   ac(); activeZone?.touch();
   ndc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
+  for (const r of tapRoots) r.updateMatrixWorld(true); // matriks benda tersembunyi (kotak ketuk) tidak dihitung tiap frame
   const hits = raycaster.intersectObjects(tapRoots, true);
   for (const h of hits) {
     const t = findTap(h.object);
@@ -1082,7 +1202,7 @@ class Zone {
       c.fillStyle = '#1d2b53'; c.font = `800 ${this.name.length > 13 ? 62 : 74}px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(this.name, 256, 88);
     });
     const face = new THREE.MeshLambertMaterial({ map: tex }); const wood = mat('#c98f52');
-    const b = new THREE.Mesh(BOX, [wood, wood, wood, wood, face, wood]); b.scale.set(2.3, 0.72, 0.12); b.position.y = 1.65; b.castShadow = true; g.add(b);
+    const b = faceBox(wood, face); b.scale.set(2.3, 0.72, 0.12); b.position.y = 1.65; b.castShadow = true; g.add(b);
   }
   // papan juara: Top 3 lokasi ini
   buildTop() {
@@ -1090,7 +1210,7 @@ class Zone {
     box(0.18, 1.6, 0.18, '#8a5a35', -0.9, 0.8, 0, g); box(0.18, 1.6, 0.18, '#8a5a35', 0.9, 0.8, 0, g);
     this.topTex = canvasTex(400, 350, () => {});
     const face = new THREE.MeshLambertMaterial({ map: this.topTex }); const gold = mat('#e0a400');
-    const b = new THREE.Mesh(BOX, [gold, gold, gold, gold, face, gold]); b.scale.set(2.2, 1.92, 0.12); b.position.y = 2.35; b.castShadow = true; g.add(b);
+    const b = faceBox(gold, face); b.scale.set(2.2, 1.92, 0.12); b.position.y = 2.35; b.castShadow = true; g.add(b);
     this.drawTop();
   }
   drawTop(status = this.status || '') {
@@ -1336,7 +1456,7 @@ class Kebun extends Zone {
     box(0.2, 2.2, 0.2, '#8a5a35', 0, 1.1, -3.7, g);
     this.boardTex = canvasTex(320, 240, () => {});
     const wood = mat('#c98f52'); const face = new THREE.MeshLambertMaterial({ map: this.boardTex });
-    const b = new THREE.Mesh(BOX, [wood, wood, wood, wood, face, wood]); b.scale.set(2.0, 1.5, 0.14); b.position.set(0, 2.9, -3.6); b.castShadow = true; g.add(b);
+    const b = faceBox(wood, face); b.scale.set(2.0, 1.5, 0.14); b.position.set(0, 2.9, -3.6); b.castShadow = true; g.add(b);
     this.drawBoard('?', 0, '#ff9a1f');
     this.makeIcon((ic) => { box(1.1, 1.1, 1.1, '#ff9a1f', 0, 0, 0, ic); box(0.18, 0.35, 0.18, '#6b4423', 0, 0.7, 0, ic); box(0.45, 0.12, 0.3, '#3fb25a', 0.25, 0.68, 0, ic); });
   }
@@ -1623,7 +1743,7 @@ class Hewan extends Zone {
     box(0.2, 2.2, 0.2, '#8a5a35', 0, 1.1, -4.5, g);
     this.boardTex = canvasTex(320, 240, () => {});
     const wood = mat('#c98f52'); const face = new THREE.MeshLambertMaterial({ map: this.boardTex });
-    const b = new THREE.Mesh(BOX, [wood, wood, wood, wood, face, wood]); b.scale.set(2.0, 1.5, 0.14); b.position.set(0, 3.0, -4.4); b.castShadow = true; g.add(b);
+    const b = faceBox(wood, face); b.scale.set(2.0, 1.5, 0.14); b.position.set(0, 3.0, -4.4); b.castShadow = true; g.add(b);
     this.animals = ANIMALS.map((A, i) => {
       const a = new THREE.Group(); const h = A.build(a);
       hitBox(1.5, h + 0.3, 1.8, 0, h / 2, 0, a);
@@ -1740,7 +1860,7 @@ class Pola extends Zone {
       setTimeout(() => { if (!this.alive(t0)) return; b.visible = true; SFX.tap(); flyTo(b, this.slotPos[i], { height: 0, dur: 0.3 }); }, 150 * i);
     });
     const qside = mat('#ffffff'); const qface = new THREE.MeshLambertMaterial({ map: this.qTex });
-    this.q = new THREE.Mesh(BOX, [qside, qside, qface, qside, qface, qside]); this.q.scale.setScalar(0.8);
+    this.q = faceBox(qside, qface, [2, 4]); this.q.scale.setScalar(0.8);
     this.q.position.copy(this.slotPos[this.miss]); this.q.userData.baseY = 0.8; this.q.castShadow = true; this.temp.add(this.q);
     // pilihan
     const others = names.filter((x) => x !== this.answerName);
@@ -1814,7 +1934,7 @@ class Bentuk extends Zone {
     [[-4.8, '#e8434b', 'lingkaran'], [4.8, '#3a7cf5', 'segitiga']].forEach(([x, c, sh]) => {
       box(0.5, 2.6, 0.5, c, x, 1.3, -3.6, g);
       const face = new THREE.MeshLambertMaterial({ map: shapeTex(sh, COLORS[pick(SHAPE_COLORS)]) }); const side = mat('#fffaf0');
-      const t = new THREE.Mesh(BOX, [side, side, side, side, face, side]); t.scale.set(1.3, 1.3, 0.16); t.position.set(x, 3.3, -3.6); g.add(t);
+      const t = faceBox(side, face); t.scale.set(1.3, 1.3, 0.16); t.position.set(x, 3.3, -3.6); g.add(t);
     });
     for (let i = 0; i < 5; i++) box(1.6 - i * 0.3, 0.4, 1.6 - i * 0.3, ['#ffd23a', '#ff8fc0', '#7cc8f5', '#9be07f', '#ffffff'][i], 4.6, 0.2 + i * 0.4, -1.4, g);
     this.boardTex = makeBoard(g, 0, -3.8, 2.4, 1.7, 3.0);
@@ -1835,7 +1955,7 @@ class Bentuk extends Zone {
     const g = new THREE.Group(); g.position.set(x, 0, 0.4);
     box(0.24, 0.9, 0.24, '#8a5a35', 0, 0.45, -0.05, g);
     const face = new THREE.MeshLambertMaterial({ map: shapeTex(shape, COLORS[colorName]) }); const side = mat(COLORS[colorName]);
-    const card = new THREE.Mesh(BOX, [side, side, side, side, face, side]); card.scale.set(1.5, 1.5, 0.18); card.position.y = 1.55; card.castShadow = true; g.add(card);
+    const card = faceBox(side, face); card.scale.set(1.5, 1.5, 0.18); card.position.y = 1.55; card.castShadow = true; g.add(card);
     hitBox(1.7, 2.6, 0.8, 0, 1.3, 0, g);
     g.userData = { shape, color: colorName, baseY: 0 };
     g.userData.tap = () => this.choose(g);
@@ -2348,7 +2468,7 @@ class Rasa extends Zone {
     box(0.36, 0.7, 0.4, '#2c2f3a', -0.2, 0.35, 0, g); box(0.36, 0.7, 0.4, '#2c2f3a', 0.2, 0.35, 0, g);
     box(0.95, 0.85, 0.55, shirt, 0, 1.12, 0, g);
     const sk = mat(skin); const face = new THREE.MeshLambertMaterial({ map: emoFaceTex(emo, skin) });
-    const head = new THREE.Mesh(BOX, [sk, sk, sk, sk, face, sk]); head.scale.setScalar(1.15); head.position.y = 2.1; head.castShadow = true; g.add(head);
+    const head = faceBox(sk, face); head.scale.setScalar(1.15); head.position.y = 2.1; head.castShadow = true; g.add(head);
     box(1.2, 0.25, 1.2, pick(['#3b2a20', '#2a1d16', '#6b4423', '#1d1d1d']), 0, 2.75, -0.02, g);
     hitBox(1.4, 3.0, 1.0, 0, 1.5, 0, g);
     g.userData = { emo, baseY: 0, correct: emo === this.target }; g.userData.tap = () => this.choose(g);
@@ -2415,7 +2535,7 @@ class Tulis extends Zone {
     box(5.2, 2.4, 0.2, '#8a5a35', 0, 1.9, -4.62, g);
     this.chalk = canvasTex(512, 236, () => {});
     const face = new THREE.MeshLambertMaterial({ map: this.chalk }); const wood = mat('#8a5a35');
-    const b = new THREE.Mesh(BOX, [wood, wood, wood, wood, face, wood]); b.scale.set(4.9, 2.15, 0.1); b.position.set(0, 1.9, -4.48); g.add(b);
+    const b = faceBox(wood, face); b.scale.set(4.9, 2.15, 0.1); b.position.set(0, 1.9, -4.48); g.add(b);
     // pensil raksasa
     const pen = new THREE.Group(); pen.position.set(4.6, 0, -2.4); pen.rotation.z = 0.15; g.add(pen);
     box(0.7, 3.2, 0.7, '#ffd23a', 0, 1.6, 0, pen); box(0.72, 0.4, 0.72, '#ff8fc0', 0, 3.4, 0, pen); box(0.5, 0.4, 0.5, '#f2d1a0', 0, -0.1, 0, pen); box(0.2, 0.3, 0.2, '#2c2f3a', 0, -0.4, 0, pen);
@@ -4487,7 +4607,7 @@ $('#voiceTest').onclick = () => speak('Halo! Aku Kak Rara. Wah, kamu sudah datan
 $('#setRate').onchange = (e) => { dev.rate = +e.target.value; persistDev(); speak('Halo! Ini kecepatan suaraku.'); };
 $('#setSfx').onclick = (e) => { dev.sfx = !dev.sfx; setToggle(e.currentTarget, dev.sfx); persistDev(); };
 $('#setChat').onclick = (e) => { dev.chat = dev.chat === false; setToggle(e.currentTarget, dev.chat); if (!dev.chat && net.mic) { micOff(); $('#micBtn').classList.remove('on'); } persistDev(); };
-$('#setLite').onclick = (e) => { dev.lite = !dev.lite; setToggle(e.currentTarget, dev.lite); persistDev(); applyGraphics(); };
+$('#setLite').onclick = (e) => { dev.lite = !dev.lite; setToggle(e.currentTarget, dev.lite); persistDev(); if (!dev.lite && gfx.low) setLowGfx(false); else applyGraphics(); }; // mematikan mode ringan = grafis penuh lagi (mode hemat otomatis bisa aktif lagi bila tetap lambat)
 $('#resetBtn').onclick = (e) => {
   const b = e.currentTarget;
   if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Yakin? Ketuk sekali lagi'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Hapus semua kemajuan'; }, 4000); return; }
@@ -5815,7 +5935,7 @@ function update(dt) {
     p.rotation.x += dt * 5; p.rotation.y += dt * 4;
     if (p.userData.life <= 0) { scene.remove(p); particles.splice(i, 1); }
   }
-  for (const c of clouds) { c.position.x += c.userData.speed * dt; if (c.position.x > 100) c.position.x = -100; }
+  cloudTick(dt);
   for (const z of Object.values(zones)) { const ic = z.icon; ic.rotation.y += dt * 0.8; ic.position.y = 6.2 + Math.sin(elapsed * 2 + z.cx) * 0.3; z.tick?.(elapsed, dt); }
   for (const a of animated) a.fn(elapsed, dt);
   if (zones.pola?.q?.visible) zones.pola.q.position.y = 0.8 + Math.sin(elapsed * 4) * 0.12;
@@ -6003,11 +6123,27 @@ function update(dt) {
     if (saveTick > 5) { saveTick = 0; captureCheckpoint(); persist(); checkTime(); }
   }
 }
-function loop() {
-  const dt = Math.min(clock.getDelta(), 0.05);
-  update(dt);
-  renderer.render(scene, camera);
+// matriks dunia hanya dihitung untuk benda yang terlihat: ribuan benda tersembunyi (wahana jauh, lantai gedung,
+// warga di pulau lain) dilewati. Benda yang muncul lagi langsung dihitung karena updateMatrix menandainya.
+scene.matrixWorldAutoUpdate = false;
+function visibleMatrices(o, force) {
+  if (o.matrixAutoUpdate) o.updateMatrix();
+  if (o.matrixWorldNeedsUpdate || force) {
+    if (o.parent) o.matrixWorld.multiplyMatrices(o.parent.matrixWorld, o.matrix); else o.matrixWorld.copy(o.matrix);
+    o.matrixWorldNeedsUpdate = false; force = true;
+  }
+  const ch = o.children;
+  for (let i = 0; i < ch.length; i++) if (ch[i].visible) visibleMatrices(ch[i], force);
+}
+function loop(now) {
   requestAnimationFrame(loop);
+  if (gfx.low && now - gfx.last < 30) return; // mode hemat: 30 fps yang stabil (tidak naik-turun, HP tidak cepat panas)
+  gfx.last = now;
+  const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
+  autoRes(raw);
+  update(dt);
+  visibleMatrices(scene, false); detailTick();
+  renderer.render(scene, camera);
 }
 
 /* =========================================================
@@ -6018,14 +6154,14 @@ async function boot() {
   applyGraphics();
   const before = new Set(scene.children);
   buildIsland();
-  const groundB = scene.children.filter((o) => !before.has(o) && o.isInstancedMesh); // tanah Pulau Balok
-  const ctx = { scene, box, mat, BOX, canvasTex, rrect, FONT, makeCharacter, makeHat, faceTexture, emojiSprite, animated, burst, edgeR, tapRoots, onNpc: (n) => npcTap(n), pushTrees: (p) => pushTrees(p, 0.4) };
+  const groundB = scene.children.filter((o) => !before.has(o) && !o.userData.sky && (o.isInstancedMesh || o.userData.ground)); // tanah Pulau Balok
+  const ctx = { scene, box, mat, BOX, faceGeo, plainMats, INST_MAT, canvasTex, rrect, FONT, makeCharacter, makeHat, faceTexture, emojiSprite, animated, burst, edgeR, tapRoots, onNpc: (n) => npcTap(n), pushTrees: (p) => pushTrees(p, 0.4) };
   W.initWorld(ctx);
   const beforeCity = new Set(scene.children);
   KOTA.initCity(ctx); // Pulau Kota dibangun bersama, digabung terpisah supaya ringan
   const cityRoots = scene.children.filter((o) => !beforeCity.has(o));
   buildLamps();
-  const decor = scene.children.filter((o) => !before.has(o) && !o.isInstancedMesh && !clouds.includes(o) && !cityRoots.includes(o));
+  const decor = scene.children.filter((o) => !before.has(o) && !o.isInstancedMesh && !o.userData.ground && !cityRoots.includes(o));
   buildMonument(); // Menara Kristal di tengah pulau
   buildFountain();
   zones.kebun = new Kebun(); zones.warna = new Warna(); zones.hewan = new Hewan(); zones.pola = new Pola();
@@ -6041,12 +6177,13 @@ async function boot() {
   player.ch.root.rotation.y = Math.PI;
   scene.add(player.ch.root, marker); applyAvatar();
   updateStars(); refreshCrystals();
-  initFx({ ac, sfx: () => dev.sfx, isLite: () => dev.lite });
+  initFx({ ac, sfx: () => dev.sfx, isLite: liteGfx });
   initPad({
     onBack: () => { SFX.tap(); const z = activeZone; leaveZone(); if (z) { const [x, y] = z.approach(9); walkTo(x, y); } },
     onSay: () => { if (lastLine) speak(lastLine); }, tap: () => SFX.tap(), onActivity: () => activeZone?.touch(),
   });
   window.addEventListener('resize', portraitHint);
+  collectDetails();
   showLogin();
   connect(onNet, onNetStatus);
   if (location.protocol === 'file:') onNetStatus('offline');
@@ -6058,6 +6195,6 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.__pbSend = send;
 window.__pbSpeak = () => { const z = speakZone; const it = z?.items?.[z.idx]; return it ? { read: it.read, value: it.value, show: it.show, type: it.type, idx: z.idx, mode: srMode } : null; };
 window.__pbKill = (id) => killZombie(id, net.id); window.__pbBoard = () => boardTransit(); window.__pbRent = (k) => rent(k); window.__pbAskRide = (nm) => { const r = [...remotes.values()].find((q) => q.name === nm); if (r) askRide(r); return !!r; }; window.__pbRemotes = () => [...remotes.values()].map((r) => ({ name: r.name, x: r.ch.root.position.x, y: r.ch.root.position.y, z: r.ch.root.position.z, seated: !!r.seated, vis: r.ch.root.visible })); window.__pbVeh = veh; window.__pbZHost = zHost; window.__pbZ = () => zombies; window.__pbSpawn = (k, at) => spawnZombie(k ?? 0, at); window.__pbNight = nightSt; window.__pbMe = me; window.__pbZT = () => ({ t: zTargets(), rest: worldSt.rest, safe: inSafe(player.pos.x, player.pos.z), y: player.y, down: me.down, playing, zone: !!activeZone }); window.__pbZTick = (dt) => { updateZombies(dt); updateCombat(dt); }; window.__pbWave = () => waveInfo(); window.__pbW = () => ({ phase: worldSt.phase, host: amZHost(), safe: worldSt.safe, rest: worldSt.rest, down: me.down, spec: spec.on, specName: $('#specName').textContent, chip: $('#phaseChip').textContent }); window.__pbHurt = () => { me.inv = 0; return hurtMe({ x: window.__pb.player.pos.x + 1, z: window.__pb.player.pos.z }); };
-window.__pbKota = KOTA; window.__pbTransit = () => transit; window.__pbCare = care; window.__pbWorld = W; window.__pbClimb = climb; window.__pbEat = eatSt; window.__pbPara = para; window.__pbVeh = veh; window.__pbTalk = (i) => talkTo(W.npcs[i]);
+window.__pbKota = KOTA; window.__pbGfx = gfx; window.__pbTransit = () => transit; window.__pbCare = care; window.__pbWorld = W; window.__pbClimb = climb; window.__pbEat = eatSt; window.__pbPara = para; window.__pbVeh = veh; window.__pbTalk = (i) => talkTo(W.npcs[i]);
 window.__pb = { zones, player, save: () => save, walkTo, onTap, camera, view, stick, teleport, openMap: () => openMap(), speak, voices: () => idVoices, net, remotes, doLogin, doEmote, setCamMode, celebrate };
 boot();

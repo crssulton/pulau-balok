@@ -40,7 +40,7 @@ const GEO = {};
 function geo(k) {
   if (GEO[k]) return GEO[k];
   const g = { cyl: () => new THREE.CylinderGeometry(0.5, 0.5, 1, 18), cone: () => new THREE.ConeGeometry(0.5, 1, 18), roof: () => new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1).rotateY(Math.PI / 4),
-    sph: () => new THREE.SphereGeometry(0.5, 14, 10), dome: () => new THREE.SphereGeometry(0.5, 18, 8, 0, TAU, 0, Math.PI / 2),
+    sph: () => new THREE.SphereGeometry(0.5, 10, 8), dome: () => new THREE.SphereGeometry(0.5, 18, 8, 0, TAU, 0, Math.PI / 2),
     tri: () => new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(-0.5, 0), new THREE.Vector2(0.5, 0), new THREE.Vector2(0, -1)]), { depth: 0.04, bevelEnabled: false }).translate(0, 0, -0.02) }[k]();
   g.userData.batch = true; return (GEO[k] = g);
 }
@@ -931,7 +931,7 @@ function buildCoaster() {
       const base = W.inCity(p.x, p.z) ? 0 : -1.2, h = p.y - 0.55 - base; K.box(0.35, h, 0.35, '#c8ccd6', p.x, base + h / 2, p.z, root, false);
     }
   }
-  [['#e8434b', 0.09], ['#e8434b', 0.09], ['#ffd23a', 0.2]].forEach(([c, r], k) => { const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rails[k], true), n * 2, r, 6, true), K.mat(c)); m.castShadow = true; root.add(m); });
+  [['#e8434b', 0.09], ['#e8434b', 0.09], ['#ffd23a', 0.2]].forEach(([c, r], k) => { const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rails[k], true), n, r, 6, true), K.mat(c)); m.castShadow = true; root.add(m); });
   // kaki penyangga putaran
   for (const sx of [-1, 1]) { const [lx, lz] = L(LOOP.x + sx * (LOOP.r + 0.5), LOOP.z + 1.5); const h = LOOP.y + LOOP.r + 1.2; K.box(0.6, h, 0.6, '#c8ccd6', lx, -1.2 + h / 2, lz, root); K.box(0.5, 0.5, 4, '#c8ccd6', lx, LOOP.y + LOOP.r, lz, root, false); }
   // 3 gerbong x 2 kursi = 6 penumpang; gerbong depan berhidung
@@ -1027,7 +1027,7 @@ function buildTrain() {
       if (Math.round(d / 1.6) % 5 === 0 && p.y > 1.6) { const h = p.y - 0.6; K.box(1.1, h, 1.1, '#b8bec4', wx, h / 2, wz, root); K.box(3.2, 0.5, 1.3, '#b8bec4', wx, h - 0.25, wz, root, false).rotation.y = p.yaw; addSolid(wx, wz, 0.55, 0.55, 0, h); }
     }
   }
-  for (const arr of [railL, railR]) { const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(arr, true), arr.length * 2, 0.08, 5, true), K.mat('#9aa0a6')); root.add(m); }
+  for (const arr of [railL, railR]) { const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(arr, true), arr.length, 0.08, 5, true), K.mat('#9aa0a6')); root.add(m); }
   // bukit & terowongan
   { const [hx, hz] = L(HILL.x, HILL.z), hillMat = new THREE.MeshLambertMaterial({ color: '#5fb953', side: THREE.DoubleSide });
     S('dome', HILL.rx * 2, HILL.h * 2, HILL.rz * 2, hillMat, hx, 0, hz);
@@ -1348,8 +1348,8 @@ function crowdFinish() {
   const N = CROWD.list.length; if (!N) return;
   const g = new THREE.Group(); g.userData.dynamic = true; CDYN.add(g); CROWD.g = g;
   const white = new THREE.MeshLambertMaterial({ color: '#ffffff' }), face = new THREE.MeshLambertMaterial({ map: K.faceTexture('#ffffff') });
-  const mats = [white, white, white, [white, white, white, white, face, white], white, white];
-  CROWD.parts = C_PER.map((per, mi) => { const m = new THREE.InstancedMesh(K.BOX, mats[mi], N * per); m.frustumCulled = false; m.castShadow = false; m.receiveShadow = true; g.add(m); return m; });
+  const mats = [white, white, white, [white, face], white, white]; // kepala: 2 grup (sisi + wajah)
+  CROWD.parts = C_PER.map((per, mi) => { const m = new THREE.InstancedMesh(mi === 3 ? K.faceGeo() : K.BOX, mats[mi], N * per); m.frustumCulled = false; m.castShadow = false; m.receiveShadow = true; g.add(m); return m; });
   const col = new THREE.Color();
   for (const c of CROWD.list) {
     const ci = [0, 1, 2, 2, 3, 3];
