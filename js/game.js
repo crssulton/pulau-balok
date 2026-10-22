@@ -6,6 +6,8 @@ import { connect, send, stopNet, net, addPeer, removePeer, onRtc, micOn, micOff,
 import { initPad, closePad, padOpen, tracePad, TRACE, drawPad, EXAMPLES, EXAMPLE_NAMES, puzzlePad, SCENE_COUNT } from './pad.js';
 import * as W from './world.js';
 import * as KOTA from './city.js';
+import * as FARM from './farm.js';
+import { newFarm } from './farm-state.js';
 
 /* =========================================================
    UTIL
@@ -78,6 +80,7 @@ const DEFAULT = {
   hats: ['none'], stars: 0, greeted: false, story: false, crystals: [], chapterDone: [],
   coins: 0, ammo: 0, hp: 3, maxHp: 5, weapons: ['tangan'], melee: 'tangan', gun: null, zkills: 0, summits: 0,
   emotes: [], raceBest: 0, lastPos: null, booksRead: [], // koleksi stiker, rekor balap, posisi terakhir (checkpoint), buku yang sudah tamat dibaca
+  farm: newFarm(),
   zones: Object.fromEntries(ZONE_IDS.map((id) => [id, zoneBlank()])),
   // per pemain (diatur orang tua): level 0 = otomatis menyesuaikan, 1–4 = tetap; limit = menit per hari
   settings: { limit: 20, level: 0 },
@@ -503,6 +506,7 @@ for (const id of ZONE_IDS) {
 }
 // landmark hiasan: {x,z,r} supaya pohon tidak tumbuh di atasnya
 const LANDMARKS = {
+  perahuKebun: { x: FARM.HOME[0], z: FARM.HOME[1], r: 9 },
   mercusuar: { x: -88, z: -30, r: 4 }, dermaga: { x: -86, z: 30, r: 5 }, desa: { x: -45, z: 78, r: 6 },
   kolam: { x: -45, z: -78, r: 6 }, kincir: { x: 45, z: 78, r: 5 },
 };
@@ -512,6 +516,7 @@ for (const [id, p] of Object.entries(W.PLACES)) LANDMARKS[id] = { x: p.x, z: p.z
 for (const [id, p] of Object.entries(W.PLACES)) { if (id === 'kapal') continue; const [gx, gz] = p.go, dx = gx - p.x, dz = gz - p.z, d = Math.hypot(dx, dz) || 1; for (const k of [3.5, 9]) LANDMARKS[`${id}_cam${k}`] = { x: gx + (dx / d) * k, z: gz + (dz / d) * k, r: 4 }; }
 for (const id of ['sekolah', 'kantin', 'gedung', 'rumah']) { const { x, z } = W.PLACES[id]; const d = Math.hypot(x, z); PATHS.push([(x * RING) / d, (z * RING) / d, (x * (d - 5.5)) / d, (z * (d - 5.5)) / d]); }
 PATHS.push([-RING2, 0, W.TOWER.x + W.TOWER.fence, 0]);
+PATHS.push([-18, -58, ...FARM.HOME]);
 const colliders = []; // {x,z,r}
 function distToSeg(px, pz, ax, az, bx, bz) {
   const vx = bx - ax, vz = bz - az; const t = clamp(((px - ax) * vx + (pz - az) * vz) / (vx * vx + vz * vz), 0, 1);
@@ -614,20 +619,22 @@ function staticBatch(roots, skip = new Set()) {
 }
 // checkpoint otomatis: posisi aman terakhir disimpan bersama data pemain, lalu dipakai saat main lagi
 function captureCheckpoint() {
-  if (!playing || me.down || activeZone || veh.kind || ride || transit || care.on || para.phase || !player.onGround || swimming() || player.standOn?.moving || camMode !== 'follow') return;
+  if (!playing || FARM.sailing() || me.down || activeZone || veh.kind || ride || transit || care.on || para.phase || !player.onGround || swimming() || player.standOn?.moving || camMode !== 'follow') return;
   save.lastPos = { x: +player.pos.x.toFixed(1), z: +player.pos.z.toFixed(1), y: +player.y.toFixed(2), cp: climb.cp || 0, ready: climb.ready ? 1 : 0 };
 }
 function resumeCheckpoint() {
   const p = save.lastPos; if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) return false;
   teleport(p.x, p.z, Math.max(0, p.y || 0)); climb.cp = p.cp || 0; climb.ready = !!p.ready;
-  toast(`📍 Lanjut dari posisi terakhir${W.islandOf(p.x, p.z) === 'kota' ? ' di Pulau Kota' : ''}`); return true;
+  toast(`📍 Lanjut dari posisi terakhir${W.islandOf(p.x, p.z) === 'kebun' ? ' di Pulau Kebun' : W.islandOf(p.x, p.z) === 'kota' ? ' di Pulau Kota' : ''}`); return true;
 }
-// dua pulau digabung terpisah; pulau yang jauh tidak digambar (hemat untuk tablet)
-const islandGfx = { balok: [], kota: [], showB: true, showK: true };
+// tiap pulau digabung terpisah; pulau yang jauh tidak digambar (hemat untuk tablet)
+const islandGfx = { balok: [], kota: [], kebun: [], showB: true, showK: true, showF: true };
 function islandCull() {
   const showB = Math.hypot(player.pos.x, player.pos.z) < 290, showK = Math.hypot(player.pos.x - W.CITY.x, player.pos.z - W.CITY.z) < 270;
   if (showB !== islandGfx.showB) { islandGfx.showB = showB; for (const o of islandGfx.balok) o.visible = showB; }
   if (showK !== islandGfx.showK) { islandGfx.showK = showK; for (const o of islandGfx.kota) o.visible = showK; }
+  const showF = FARM.near(player.pos.x, player.pos.z);
+  if (showF !== islandGfx.showF) { islandGfx.showF = showF; for (const o of islandGfx.kebun) o.visible = showF; }
 }
 const waterMat = new THREE.MeshLambertMaterial({ color: '#4cb4ea' });
 // tanah petak 1x1: hanya sisi yang terlihat (atas + tepi luar) dalam satu mesh per petak 34x34,
@@ -936,7 +943,7 @@ function walkTo(x, z, onArrive = null) {
   marker.position.set(x, player.y + 0.05, z); marker.visible = true; marker.scale.setScalar(1); marker.material.opacity = 0.9;
 }
 // lompat: boleh sesaat setelah meninggalkan pijakan, dan tombol yang ditekan sedikit terlalu cepat tetap dihitung
-function jump() { if (para.phase === 1) { openChute(); return; } if (veh.kind === 'jetski' || veh.kind === 'plane' || ride || transit || care.on) return; player.jumpBuf = 0.2; tryJump(); }
+function jump() { if (FARM.sailing()) return; if (para.phase === 1) { openChute(); return; } if (veh.kind === 'jetski' || veh.kind === 'plane' || ride || transit || care.on) return; player.jumpBuf = 0.2; tryJump(); }
 function tryJump() {
   if (player.jumpBuf <= 0 || player.vy > 0 || !(player.onGround || player.coyote > 0)) return;
   player.vy = 8; player.onGround = false; player.coyote = 0; player.jumpBuf = 0; SFX.jump();
@@ -1010,7 +1017,7 @@ const ndc = new THREE.Vector2();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function findTap(obj) { while (obj) { if (obj.userData && obj.userData.tap) return obj; obj = obj.parent; } return null; }
 function onTap(cx, cy) {
-  if (!playing || paused()) return;
+  if (!playing || paused() || FARM.sailing()) return;
   ac(); activeZone?.touch();
   ndc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
@@ -1018,8 +1025,10 @@ function onTap(cx, cy) {
   const hits = raycaster.intersectObjects(tapRoots, true);
   for (const h of hits) {
     const t = findTap(h.object);
-    if (t && (t.visible !== false)) { t.userData.tap(t); return; }
+    let visible = true; for (let q = h.object; q; q = q.parent) if (!q.visible) { visible = false; break; }
+    if (t && visible) { t.userData.tap(t, h); return; } // h.instanceId: barang kavling kebun
   }
+  { const g = new THREE.Vector3(); groundPlane.constant = 0; if (raycaster.ray.intersectPlane(groundPlane, g) && FARM.groundTap(g.x, g.z)) return; } // Mode Bangun kebun: pindahkan bayangan
   if (IS_MOBILE) return; // HP/tablet: berjalan pakai joystick saja, ketuk tanah tidak memindahkan pemain (mouse di komputer tetap bisa)
   const p = new THREE.Vector3();
   groundPlane.constant = -player.y; // di atas bangunan/menara: ketuk = jalan di ketinggian yang sama
@@ -1146,6 +1155,7 @@ window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'SELECT') return;
   keys.add(e.key.toLowerCase());
   if (e.key === ' ' && playing && !paused()) { e.preventDefault(); player.jumpHeld = true; jump(); }
+  if ((e.key === 'Enter' || e.key === 'f' || e.key === 'F') && playing && !paused() && FARM.act()) return; // tombol aksi kebun
   if ((e.key === 'Enter' || e.key === 'f' || e.key === 'F') && nearZone && !activeZone) enterNear();
   if ((e.key === 'j' || e.key === 'J') && playing) punch();
   if ((e.key === 'k' || e.key === 'K') && playing) shoot();
@@ -3433,6 +3443,10 @@ function onNet(m) {
     case 'psettings': Object.assign(save.settings, m.settings || {}); persist(); toast('Pengaturan dari orang tua diperbarui'); break;
     case 'family': renderFamily(m); break;
     case 'gift': getGift(+m.n || 0); break;
+    case 'farmMarket': FARM.onMarket(m.list, m.msg); break;
+    case 'farmSync': FARM.onSync(m.delta, m.msg); break;
+    case 'farmWorld': FARM.onWorld(m); break;
+    case 'farmPlot': FARM.onPlot(m.plot); break;
     case 'room': zones[m.zone]?.onRoom(m); break;
     case 'round': { const z = zones[m.zone]; if (!z || !z.active) break; if (!z.arrived) z.pending = m; else z.playRound(m); break; }
     case 'style': zones[m.zone]?.onStyle(m); break;
@@ -3488,7 +3502,8 @@ const isSafeZone = (z) => !nightDanger() || (worldSt.safe || []).includes(z.id);
 let kickT = 0;
 function safeChanged() {
   enterKey = '';
-  if (!nightDanger() || !playing) return;
+  if (!nightDanger() || !playing || FARM.sailing()) return;
+  if (W.islandOf(player.pos.x, player.pos.z) === 'kebun') return; // tiga zona aman kebun tetap, tidak ikut rotasi tempat belajar
   const names = (worldSt.safe || []).map((id) => zones[id]?.name).filter(Boolean);
   if (activeZone && !isSafeZone(activeZone)) {
     kickT = 8;
@@ -3501,8 +3516,11 @@ function phaseChanged() {
   if (!playing) return;
   if (worldSt.phase === 'night') {
     tone(330, 0.6, { type: 'triangle', vol: 0.08 }); tone(247, 0.9, { type: 'triangle', vol: 0.08, delay: 0.3 });
-    if ((save.hp ?? 3) <= 0) setTimeout(goDown, 1500);
-    say(wcfg.zombies ? 'Malam tiba! Awas, zombie datang! Siapkan senjata, atau sembunyi di zona hijau!' : 'Malam tiba! Lihat, banyak bintang di langit!', { force: true });
+    if (FARM.sailing()) toast('🌙 Malam tiba saat perjalanan.');
+    else {
+      if ((save.hp ?? 3) <= 0) setTimeout(goDown, 1500);
+      say(wcfg.zombies ? 'Malam tiba! Awas, zombie datang! Siapkan senjata, atau sembunyi di zona hijau!' : 'Malam tiba! Lihat, banyak bintang di langit!', { force: true });
+    }
   } else {
     tone(523, 0.3, { type: 'triangle', vol: 0.1 }); tone(784, 0.4, { type: 'triangle', vol: 0.1, delay: 0.15 });
     say((save.hp ?? 3) <= 0 ? 'Pagi tiba! Main satu permainan, nanti dapat nyawa lagi!' : 'Yeay, pagi tiba! Zombienya hilang semua!', { force: true });
@@ -3533,7 +3551,7 @@ function worldTick(dt) {
   }
   // peringatan 1 menit sebelum malam
   const left = worldSt.ends - wnow();
-  if (playing && worldSt.phase === 'day' && wcfg.cycle && wcfg.zombies !== false && left <= 60000 && left > 0 && warnedFor !== worldSt.start) {
+  if (playing && !FARM.sailing() && worldSt.phase === 'day' && wcfg.cycle && wcfg.zombies !== false && left <= 60000 && left > 0 && warnedFor !== worldSt.start) {
     warnedFor = worldSt.start;
     [0, 0.45, 0.9].forEach((d) => { tone(880, 0.3, { type: 'square', vol: 0.05, delay: d }); tone(660, 0.3, { type: 'square', vol: 0.05, delay: d + 0.22 }); });
     say((save.hp ?? 3) <= 0 ? 'Sebentar lagi malam! Ayo main satu permainan dulu supaya dapat nyawa!' : 'Sebentar lagi malam! Siapkan senjatamu, ya!', { force: true });
@@ -3553,8 +3571,10 @@ function updatePhaseChip() {
   else if (nightDanger() && worldSt.hold) txt = [...zombies.values()].some((z) => z.kind === 5 && W.islandOf(z.x, z.z) === W.islandOf(player.pos.x, player.pos.z)) ? '👑 Kalahkan Raja Zombie supaya pagi datang!' : '👑 Teman sedang melawan Raja Zombie di pulau lain…';
   else if (nightDanger()) {
     const wv = waveInfo(), wtxt = !wv ? '' : wv.n === 0 ? `🧟 datang ${Math.ceil(wv.left)} dtk · ` : `🧟 ${wv.n}/${wv.total} ${wv.active ? '⚔️' : `☕ ${Math.ceil(wv.left)} dtk`} · `;
-    txt = wtxt + (W.islandOf(player.pos.x, player.pos.z) === 'kota' ? '🛡️ Taman, Alun-alun, Tugu' : `🛡️ berganti ${mmss(worldSt.safeEnds - wnow())}`);
+    txt = wtxt + (W.islandOf(player.pos.x, player.pos.z) === 'kota' ? '🛡️ Taman, Alun-alun, Tugu' : W.islandOf(player.pos.x, player.pos.z) === 'kebun' ? '🛡️ Alun-alun, Dermaga' : `🛡️ berganti ${mmss(worldSt.safeEnds - wnow())}`);
   }
+  if (W.islandOf(player.pos.x, player.pos.z) === 'kebun' && !nightDanger()) txt = '🌱 Pulau Kebun · kavling, kebun, dan pasar';
+  if (FARM.sailing()) txt = '';
   el.hidden = !txt || !playing; el.textContent = txt; el.classList.toggle('warn', txt.startsWith('🌙'));
   // papan skor tiap tempat: AMAN + hitung mundur / TIDAK AMAN
   for (const z of Object.values(zones)) {
@@ -3716,8 +3736,9 @@ function busiestIsland(ps) { const n = {}; for (const p of ps) { const k = W.isl
 function spawnZombie(kind = 0, at = null) {
   // zombie dibagi sebanding jumlah pemain aktif di tiap pulau: pilih satu pemain aktif secara acak, muncul di dekatnya
   let ps = zActive(); if (!ps.length) ps = [...(playing && !me.down ? [player.pos] : []), ...[...remotes.values()].filter((r) => !r.down).map((r) => r.ch.root.position)];
+  if (!ps.length) return;
   if (kind === 5 && ps.length) { const isl = busiestIsland(ps); ps = ps.filter((p) => W.islandOf(p.x, p.z) === isl); } // Raja di pulau paling ramai
-  const who = ps.length ? pick(ps) : null, kota = who && W.islandOf(who.x, who.z) === 'kota';
+  const who = ps.length ? pick(ps) : null, isl = who && W.islandOf(who.x, who.z), kota = isl === 'kota', kebun = isl === 'kebun';
   let x = at?.[0], z = at?.[1];
   if (x == null && who && (kind === 5 || Math.random() < 0.7)) { // 30% tetap keluar dari air mancur / gorong-gorong terdekat
     const r0 = kind === 5 ? 18 : 12, r1 = kind === 5 ? 26 : 22;
@@ -3732,12 +3753,13 @@ function spawnZombie(kind = 0, at = null) {
     if (kota) { // gorong-gorong terdekat dengan pemain (tidak terlalu dekat), bukan yang acak di ujung pulau
       const near = KOTA.ZSPAWN.map(([sx, sz]) => [sx, sz, Math.hypot(sx - who.x, sz - who.z)]).filter((q) => q[2] > 8).sort((p, q) => p[2] - q[2]);
       const [sx, sz] = near.length ? pick(near.slice(0, 2)) : pick(KOTA.ZSPAWN); x = sx + Math.cos(a) * 1.5; z = sz + Math.sin(a) * 1.5;
-    } else { x = Math.cos(a) * 3.7; z = Math.sin(a) * 3.7; }
+    } else if (kebun) { const [sx, sz] = pick(FARM.ZSPAWN); x = sx + Math.cos(a) * 1.5; z = sz + Math.sin(a) * 1.5; }
+    else { x = Math.cos(a) * 3.7; z = Math.sin(a) * 3.7; }
   }
   const zz = makeZombie(`${net.id || 0}-${zSeqId++}`, kind, x, z), h = zHost.heat;
   if (h > 0) { zz.hp = zz.max = Math.round(zz.hp * (1 + 0.35 * h)); zz.speed *= 1 + 0.12 * h; zz.leapCd *= 0.7; zz.spitCd *= 0.7; }
 }
-const inSafe = (x, z) => (nightDanger() && KOTA.inCitySafe(x, z)) || Object.values(zones).some((q) => isSafeZone(q) && Math.hypot(x - q.cx, z - q.cz) < 6.6);
+const inSafe = (x, z) => (nightDanger() && W.islandOf(x, z) === 'kebun' && FARM.inSafe(x, z)) || (nightDanger() && KOTA.inCitySafe(x, z)) || Object.values(zones).some((q) => isSafeZone(q) && Math.hypot(x - q.cx, z - q.cz) < 6.6);
 function zTargets() {
   const t = [];
   if (worldSt.rest) return t; // istirahat: zombie hanya berkeliaran
@@ -4071,6 +4093,7 @@ function updateBossBar(boss) {
 }
 let waveSeen = '';
 function waveHud() {
+  if (FARM.sailing()) return;
   const wv = waveInfo(); if (!wv || !playing) { waveSeen = ''; return; }
   nightStart();
   const key = `${worldSt.start}:${wv.n}:${wv.active}`; if (key === waveSeen) return; waveSeen = key;
@@ -4106,6 +4129,7 @@ function useSuper() {
    ========================================================= */
 const me = { inv: 0, down: false, punchCd: 0, shootCd: 0, punchT: 0, firing: false };
 function hurtMe(z, push = 1.4) {
+  if (FARM.sailing()) return;
   if (me.paused || me.inv > 0 || me.down || (activeZone && isSafeZone(activeZone)) || inSafe(player.pos.x, player.pos.z)) return;
   save.hp = Math.max(0, (save.hp ?? 3) - HURT_BY[combatLevel()]); me.inv = 1.2;
   const dx = player.pos.x - z.x, dz = player.pos.z - z.z, d = Math.hypot(dx, dz) || 1; player.pos.x += (dx / d) * push; player.pos.z += (dz / d) * push; player.vy = 4 + push;
@@ -4117,6 +4141,7 @@ function hurtMe(z, push = 1.4) {
 // nyawa habis: tidak bangun otomatis. Malam = menonton pemain lain (seperti CS:GO); siang = boleh jalan & belajar.
 const spec = { on: false, idx: 0, id: null };
 function goDown() {
+  if (FARM.sailing()) return;
   if ((save.hp ?? 3) > 0) return;
   if (activeZone) leaveZone();
   player.target = null; joyEnd(); me.firing = false;
@@ -4311,9 +4336,10 @@ function updateCombat(dt) {
   }
   if (me.inv > 0 && !me.down) player.ch.root.visible = player.ch.root.visible && Math.floor(elapsed * 12) % 2 === 0;
   // tombol pukul selalu ada (siang juga); tombol tembak & Bintang Super hanya saat malam/ada zombie
-  const show = playing && !activeZone && !me.down, night = worldSt.phase === 'night' || zombies.size > 0;
+  const peaceful = FARM.sailing();
+  const show = playing && !activeZone && !me.down && !peaceful, night = worldSt.phase === 'night' || zombies.size > 0;
   $('#fightBox').hidden = !show; $('#shootBtn').hidden = !night; $('#superBtn').hidden = !night;
-  $('#zk').hidden = !nightDanger() || !playing; $('#zkN').textContent = nightSt.kills;
+  $('#zk').hidden = !nightDanger() || !playing || peaceful; $('#zkN').textContent = nightSt.kills;
   waveHud();
 }
 function floatText(t) { const el = document.createElement('div'); el.className = 'floatTxt'; el.textContent = t; document.body.appendChild(el); setTimeout(() => el.remove(), 1200); }
@@ -4637,7 +4663,7 @@ $('#restMore').onclick = () => parentGate(() => { save.time.bonus += 600; warned
 /* =========================================================
    TOMBOL HUD
    ========================================================= */
-$('#homeBtn').onclick = () => { SFX.tap(); leaveZone(); if (W.islandOf(player.pos.x, player.pos.z) === 'kota') { const [x, z] = KOTA.CITY_PLACES.alun.go; walkTo(x, z); } else walkTo(0, 7); };
+$('#homeBtn').onclick = () => { if (FARM.sailing()) return; SFX.tap(); leaveZone(); if (W.islandOf(player.pos.x, player.pos.z) === 'kebun') walkTo(...FARM.SPOTS.kavling.go); else if (W.islandOf(player.pos.x, player.pos.z) === 'kota') { const [x, z] = KOTA.CITY_PLACES.alun.go; walkTo(x, z); } else walkTo(0, 7); };
 $('#enterBtn').onclick = () => enterNear();
 { // tombol pukul: bereaksi saat disentuh (bisa sambil menahan joystick); ditahan = kombo terus
   const pb = $('#punchBtn');
@@ -4669,11 +4695,12 @@ $('#shopClose').onclick = () => { SFX.tap(); closeModal('shop'); };
 $('#zAdd').onclick = () => { const n = Math.round(+$('#zNum').value); if (!(n >= 1)) { toast('Isi jumlah zombie dulu (1–200)'); return; } $('#zNum').value = ''; worldAction(String(Math.min(200, n))); };
 document.querySelectorAll('#parent .worldCtl [data-a]').forEach((b) => (b.onclick = () => worldAction(b.dataset.a)));
 function openMap() {
+  if (FARM.sailing()) return;
   leaveZone(); player.target = null; marker.visible = false; joyEnd();
   const wrap = $('#mapPins'); wrap.innerHTML = '';
-  const inKota = W.islandOf(player.pos.x, player.pos.z) === 'kota'; $('#map .island').classList.toggle('city', inKota);
-  $('#map h2').textContent = inKota ? 'Pulau Kota · mau ke mana?' : 'Mau main di mana?';
-  const S = inKota ? W.CITY.land + 6 : R + 4, ox = inKota ? W.CITY.x : 0, oz = inKota ? W.CITY.z : 0;
+  const isle = W.islandOf(player.pos.x, player.pos.z), inKota = isle === 'kota', inFarm = isle === 'kebun'; $('#map .island').classList.toggle('city', inKota);
+  $('#map h2').textContent = inFarm ? 'Pulau Kebun · mau ke mana?' : inKota ? 'Pulau Kota · mau ke mana?' : 'Mau main di mana?';
+  const S = inFarm ? W.FARM.r + 4 : inKota ? W.CITY.land + 6 : R + 4, ox = inFarm ? W.FARM.x : inKota ? W.CITY.x : 0, oz = inFarm ? W.FARM.z : inKota ? W.CITY.z : 0;
   const pct = (v, o = 0) => `${50 + ((v - o) / S) * 50}%`;
   const target = missionZone();
   const pin = (x, z, emoji, label, color, go, badge = '', hot = false) => {
@@ -4685,7 +4712,9 @@ function openMap() {
     b.onclick = () => { SFX.tap(); closeModal('map'); go(); };
     wrap.appendChild(b);
   };
-  if (inKota) {
+  if (inFarm) {
+    for (const p of Object.values(FARM.SPOTS)) pin(p.x, p.z, p.emoji, p.name, '#e5edb6', () => { teleport(...p.go); toast(`📍 ${p.name}`); });
+  } else if (inKota) {
     for (const p of Object.values(KOTA.CITY_PLACES)) pin(p.x, p.z, p.emoji, p.name, '#ffffff', () => {
       const [x, z] = p.go; teleport(x, z); view.yaw = Math.atan2(-(p.look[0] - x), -(p.look[1] - z)); toast(`📍 ${p.name}`);
     }, nightDanger() && KOTA.safeSpots.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 3) ? '🛡️' : '');
@@ -4694,13 +4723,14 @@ function openMap() {
     const [x, y] = z.approach(); teleport(x, y); view.yaw = Math.atan2(-(z.cx - x), -(z.cz - y));
     toast(`📍 ${z.name}`);
   }, [nightDanger() && isSafeZone(z) ? '🛡️' : '', tops[z.id]?.[0]?.name === playerName ? '🥇' : '', save.crystals.includes(z.id) ? '💎' : '', ...[...remotes.values()].filter((r) => r.zone === z.id).map((r) => (r.avatar?.gender === 'P' ? '👧' : '👦'))].join(''), z === target);
-  if (!inKota) pin(0, 0, '⛲', 'Tengah', '#f3e7c6', () => { teleport(0, 7); view.yaw = 0; toast('📍 Tengah pulau'); });
-  if (!inKota) for (const p of Object.values(W.PLACES)) pin(p.x, p.z, p.emoji, p.name, '#ffffff', () => {
+  if (!inKota && !inFarm) pin(...FARM.HOME, '🚣', 'Perahu Kebun', '#e5edb6', () => { teleport(...FARM.HOME, 0.3); view.yaw = 0; toast('🚣 Dekati perahu, lalu pilih Berlayar ke Pulau Kebun.'); });
+  if (!inKota && !inFarm) pin(0, 0, '⛲', 'Tengah', '#f3e7c6', () => { teleport(0, 7); view.yaw = 0; toast('📍 Tengah pulau'); });
+  if (!inKota && !inFarm) for (const p of Object.values(W.PLACES)) pin(p.x, p.z, p.emoji, p.name, '#ffffff', () => {
     const [x, z] = p.go, [lx, lz] = p.look || [p.x, p.z]; teleport(x, z); view.yaw = Math.atan2(-(lx - x), -(lz - z));
     toast(`📍 ${p.name}`);
   });
   const me = $('#mapMe'); me.style.left = pct(player.pos.x, ox); me.style.top = pct(player.pos.z, oz);
-  for (const r of remotes.values()) { if (r.zone) continue; const rp = r.ch.root.position; if ((W.islandOf(rp.x, rp.z) === 'kota') !== inKota) continue; const d = document.createElement('span'); d.className = 'friend'; d.style.left = pct(rp.x, ox); d.style.top = pct(rp.z, oz); d.textContent = r.name; wrap.appendChild(d); }
+  for (const r of remotes.values()) { if (r.zone) continue; const rp = r.ch.root.position; if (W.islandOf(rp.x, rp.z) !== isle) continue; const d = document.createElement('span'); d.className = 'friend'; d.style.left = pct(rp.x, ox); d.style.top = pct(rp.z, oz); d.textContent = r.name; wrap.appendChild(d); }
   openModal('map');
 }
 $('#mapBtn').onclick = () => { SFX.tap(); openMap(); };
@@ -4820,6 +4850,8 @@ function onLand(ev) {
   else if (ev.fall > 1.4) tone(150, 0.1, { type: 'triangle', vol: 0.07 });
 }
 function fellInSea() {
+  if (FARM.sailing()) return;
+  if (W.islandOf(player.pos.x, player.pos.z) === 'kebun') { teleport(...FARM.LANDING, 0.3); toast('⚓ Kembali ke dermaga Pulau Kebun.'); return; }
   const city = W.islandOf(player.pos.x, player.pos.z) === 'kota';
   const [x, z] = city ? KOTA.CITY_PLACES.pelabuhan.go : W.ship.pierStart; teleport(x, z, city ? 0 : 0.21);
   say('Byur! Hati-hati, ya!', { force: true });
@@ -4879,6 +4911,7 @@ function towerChip(dT) {
 }
 // malam: bangunan, menara, gunung, laut & bandara ditutup. Satu-satunya tempat aman = lingkaran zona aman.
 function nightRules(dt, night) {
+  if (FARM.sailing()) return;
   if (night && show.on) endShow(true);
   if (night && care.on) endCare(true);
   if (night && myBalloon) releaseBalloon();
@@ -5950,7 +5983,7 @@ function update(dt) {
     const k = player.knock; player.pos.x += k.x * dt; player.pos.z += k.z * dt; k.t -= dt; if (k.t <= 0) player.knock = null;
     W.pushOut(player.pos, player.y);
   }
-  if (playing && !modal && !me.down && !player.knock?.lock) {
+  if (playing && !modal && !me.down && !player.knock?.lock && !FARM.sailing()) {
     let sx = stick.active ? stick.x : 0, sy = stick.active ? stick.y : 0;
     if (keys.has('w') || keys.has('arrowup')) sy -= 1; if (keys.has('s') || keys.has('arrowdown')) sy += 1;
     if (keys.has('a') || keys.has('arrowleft')) sx -= 1; if (keys.has('d') || keys.has('arrowright')) sx += 1;
@@ -6012,7 +6045,8 @@ function update(dt) {
   showTick(dt);
   if (veh.kind === 'jetski') { player.y = -0.35; player.vy = 0; player.onGround = true; player.standOn = null; player.peak = player.y; }
   else if (veh.kind === 'plane') { player.vy = 0; player.onGround = veh.fl.phase === 'ready'; player.standOn = null; player.peak = player.y; }
-  else if (!ride && !transit && !care.on) { const landed = W.stepVertical(player, dt); if (landed) onLand(landed); }
+  else if (!ride && !transit && !care.on && !FARM.sailing()) { const landed = W.stepVertical(player, dt); if (landed) onLand(landed); }
+  FARM.updateFarm(dt, playing && !me.paused && !me.down && document.visibilityState === 'visible');
   vehicleClock();
   paraTick(dt); swimTick(dt); eatTick(dt);
   if (player.y < -0.6 && !veh.kind && !ride && !transit) fellInSea();
@@ -6041,7 +6075,9 @@ function update(dt) {
   player.moving = moving; if (playing) sendMove(dt);
   // panah misi di kaki pemain + sorot cahaya di tujuan
   let mz = playing ? missionZone() : null;
-  if (W.islandOf(player.pos.x, player.pos.z) === 'kota') { mz = null; if (playing && nightDanger()) { let bd = 1e9; for (const q of KOTA.safeSpots) { const d = Math.hypot(q.x - player.pos.x, q.z - player.pos.z); if (d < bd) { bd = d; mz = { cx: q.x, cz: q.z }; } } } }
+  if (FARM.sailing()) mz = null;
+  else if (W.islandOf(player.pos.x, player.pos.z) === 'kebun' && playing && nightDanger()) { let bd = 1e9; for (const q of FARM.SAFE_SPOTS) { const d = Math.hypot(q.x - player.pos.x, q.z - player.pos.z); if (d < bd) { bd = d; mz = { cx: q.x, cz: q.z }; } } }
+  else if (W.islandOf(player.pos.x, player.pos.z) === 'kota') { mz = null; if (playing && nightDanger()) { let bd = 1e9; for (const q of KOTA.safeSpots) { const d = Math.hypot(q.x - player.pos.x, q.z - player.pos.z); if (d < bd) { bd = d; mz = { cx: q.x, cz: q.z }; } } } }
   else if (playing && nightDanger()) { let bd = 1e9; for (const q of Object.values(zones)) { if (!isSafeZone(q)) continue; const d = Math.hypot(q.cx - player.pos.x, q.cz - player.pos.z); if (d < bd) { bd = d; mz = q; } } }
   if (guide && beacon) {
     const show = !!mz && !activeZone && camMode === 'follow';
@@ -6173,6 +6209,21 @@ async function boot() {
   for (const z of Object.values(zones)) moving.add(z.temp);
   islandGfx.balok = [...staticBatch([...decor, ...Object.values(zones).map((z) => z.group)], moving), ...groundB, ...Object.values(zones).map((z) => z.group), ...decor.filter((o) => o !== W.kit.DYN && o.isGroup)];
   islandGfx.kota = [...staticBatch(cityRoots, moving), ...cityRoots];
+  FARM.initFarm(ctx, {
+    save: () => save, player, active: () => playing && !me.paused && !me.down,
+    busy: () => !!modal, persist, vitals: updateVitals, good: () => SFX.good(), toast,
+    say: (t, who) => say(t, { who: who?.name || 'Kak Rara', pitch: who?.pitch || 0, force: true }),
+    ask: (who, text, opts, cb) => npcAsk(who || { name: 'Kak Rara', pitch: 0 }, text, opts, (i) => { $('#bubble').hidden = true; bubbleStay = false; cb(i); }),
+    night: () => worldSt.phase === 'night',
+    walkTo, teleport, leave: leaveZone,
+    quiet: () => { $('#bubble').hidden = true; bubbleStay = false; },
+    stop: () => { teleport(player.pos.x, player.pos.z, player.y); joyEnd(); player.jumpHeld = false; player.jumpBuf = 0; player.target = null; player.onArrive = null; },
+    checkpoint: () => { save.lastPos = { x: player.pos.x, z: player.pos.z, y: player.y, cp: 0, ready: 0 }; },
+    send, online: () => net.online, name: () => playerName, tap: () => SFX.tap(), mobile: () => IS_MOBILE,
+    cam: (mode) => { const prev = view.mode; setCamMode(mode); return prev; },
+    pause: (on) => { if (on) { modal = 'farmMarket'; player.target = null; } else if (modal === 'farmMarket') modal = null; },
+  });
+  islandGfx.kebun = [...staticBatch([FARM.scenery], moving), FARM.scenery];
   player.ch = makeCharacter({ shirt: COLORS[save.avatar.shirt], pants: COLORS[save.avatar.pants], skin: SKINS[save.avatar.skin] });
   player.ch.root.rotation.y = Math.PI;
   scene.add(player.ch.root, marker); applyAvatar();
@@ -6197,4 +6248,5 @@ window.__pbSpeak = () => { const z = speakZone; const it = z?.items?.[z.idx]; re
 window.__pbKill = (id) => killZombie(id, net.id); window.__pbBoard = () => boardTransit(); window.__pbRent = (k) => rent(k); window.__pbAskRide = (nm) => { const r = [...remotes.values()].find((q) => q.name === nm); if (r) askRide(r); return !!r; }; window.__pbRemotes = () => [...remotes.values()].map((r) => ({ name: r.name, x: r.ch.root.position.x, y: r.ch.root.position.y, z: r.ch.root.position.z, seated: !!r.seated, vis: r.ch.root.visible })); window.__pbVeh = veh; window.__pbZHost = zHost; window.__pbZ = () => zombies; window.__pbSpawn = (k, at) => spawnZombie(k ?? 0, at); window.__pbNight = nightSt; window.__pbMe = me; window.__pbZT = () => ({ t: zTargets(), rest: worldSt.rest, safe: inSafe(player.pos.x, player.pos.z), y: player.y, down: me.down, playing, zone: !!activeZone }); window.__pbZTick = (dt) => { updateZombies(dt); updateCombat(dt); }; window.__pbWave = () => waveInfo(); window.__pbW = () => ({ phase: worldSt.phase, host: amZHost(), safe: worldSt.safe, rest: worldSt.rest, down: me.down, spec: spec.on, specName: $('#specName').textContent, chip: $('#phaseChip').textContent }); window.__pbHurt = () => { me.inv = 0; return hurtMe({ x: window.__pb.player.pos.x + 1, z: window.__pb.player.pos.z }); };
 window.__pbKota = KOTA; window.__pbGfx = gfx; window.__pbTransit = () => transit; window.__pbCare = care; window.__pbWorld = W; window.__pbClimb = climb; window.__pbEat = eatSt; window.__pbPara = para; window.__pbVeh = veh; window.__pbTalk = (i) => talkTo(W.npcs[i]);
 window.__pb = { zones, player, save: () => save, walkTo, onTap, camera, view, stick, teleport, openMap: () => openMap(), speak, voices: () => idVoices, net, remotes, doLogin, doEmote, setCamMode, celebrate };
+window.__pbFarm = FARM;
 boot();

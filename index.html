@@ -63,6 +63,19 @@ button:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
 #repeatBtn{pointer-events:auto;width:46px;height:46px;border-radius:16px;flex:none;box-shadow:0 4px 0 #b9cde0}
 #repeatBtn svg{width:26px;height:26px}
 #actionBtn{font-size:30px;padding:6px 34px 8px;border-radius:24px}
+/* Pulau Kebun ala Roblox: tombol aksi muncul saat dekat (di kolom kanan seperti tombol Bicara) dan hotbar bibit/Mode Bangun di bawah. */
+#farmAct{display:flex;align-items:center;gap:8px;padding:6px 14px 8px 10px;border-radius:22px;animation:enterIn .35s ease-out}#farmAct[hidden]{display:none}
+#farmAct .e{font-size:28px}#farmAct .t{display:flex;flex-direction:column;align-items:flex-start;line-height:1.05}#farmAct b{font-size:21px}#farmAct small{font-size:12px;font-weight:700;opacity:.85;max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#farmBar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;max-width:calc(100vw - 500px);overflow-x:auto;padding:6px 8px;background:#fff8e9e8;border:2px solid #d4dfad;border-radius:20px;box-shadow:0 6px 18px #344d3826;pointer-events:auto;scrollbar-width:none}#farmBar[hidden]{display:none}
+#farmBar .slot{flex:none;display:flex;flex-direction:column;align-items:center;min-width:54px;padding:4px 6px 5px;border-radius:14px;font-size:24px;line-height:1.05;box-shadow:0 3px 0 #c7c9a5}#farmBar .slot small{font-size:11px;font-weight:800}#farmBar .selected{background:#d5ed9c;outline:3px solid #51833b}
+body:has(#bubble:not([hidden])) #farmBar{bottom:112px} /* jangan menimpa gelembung bicara */
+#farmBar .day,#farmBar .hint{flex:none;font-size:13px;font-weight:800;color:#3c713b;padding:0 4px}
+#farmTrip{position:fixed;top:110px;left:50%;transform:translateX(-50%);background:#fff5dc;border-radius:18px;padding:10px 22px;font-size:22px;white-space:nowrap}
+#farmBoat{position:fixed;bottom:160px;left:50%;transform:translateX(-50%);max-width:90vw;padding:10px 24px;font-size:22px}
+#farmMarket{position:fixed;inset:0;z-index:80;background:#1d2b5388;display:grid;place-items:center;padding:16px;pointer-events:auto}#farmMarket[hidden]{display:none}
+.market-card{width:min(720px,100%);max-height:min(720px,92vh);overflow:auto;background:#fff8e9;border:3px solid #d7b86d;border-radius:26px;padding:18px;box-shadow:0 20px 60px #17203866}.market-card header{display:flex;align-items:center;justify-content:space-between;gap:16px}.market-card h2{margin:2px 0;color:#3c713b}.market-card small{display:block;color:#7a6548;font-weight:800}.market-create{display:grid;grid-template-columns:1.2fr 1.4fr .7fr .8fr auto;gap:8px;margin:14px 0}.market-create select,.market-create input{min-width:0;border:2px solid #d6c49f;border-radius:12px;padding:9px;background:#fff;font:inherit}.market-list{display:grid;gap:8px}.market-list article{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:2px solid #e7d9ba;border-radius:16px;padding:10px 12px}.market-list article span{font-weight:800}.market-list article small{font-weight:600;margin-top:2px}
+@media(max-width:600px){.market-create{grid-template-columns:1fr 1fr}.market-create .chunky{grid-column:1/-1}.market-card{padding:13px}.market-list article{font-size:14px}}
+@media(max-width:700px){#farmBar{left:12px;right:12px;transform:none;max-width:none;bottom:170px}body:has(#bubble:not([hidden])) #farmBar{bottom:230px}#farmBar .slot{min-width:46px;font-size:20px}#farmAct b{font-size:17px}#farmBoat{bottom:240px;font-size:17px}#farmTrip{top:180px;font-size:16px}}
 
 /* ---------- layar ---------- */
 .screen{position:fixed;inset:0;display:grid;place-items:center;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}

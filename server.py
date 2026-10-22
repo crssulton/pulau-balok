@@ -31,6 +31,37 @@ def name_key(name):
     return ' '.join(str(name).split()).lower()[:20]
 
 
+FARM_CROPS = ('wortel', 'kentang', 'tomat', 'cabai', 'jagung', 'stroberi', 'labu', 'semangka')
+# katalog Mode Bangun, sama dengan ITEMS di js/farm-state.js
+FARM_ITEMS = ('petak', 'jalan', 'pagar', 'bunga', 'pohon', 'bangku', 'lampu', 'ayunan', 'kolam', 'sumur', 'gudang', 'rumah')
+FARM_KAVS, SECTOR = 12, 8  # 12 kavling 24x24 m di Pulau Kebun, tiap kavling 3x3 tanah @ 8 m
+LAND_ORDER = (4, 1, 3, 5, 7, 0, 2, 6, 8)  # tanah tengah dibuka dulu (LAND_ORDER di farm-state.js)
+sector_of = lambda it: int(it['x']) // SECTOR + 3 * (int(it['z']) // SECTOR)
+
+
+def farm_data(data):
+    """Lengkapi bagian data kebun (versi 3) tanpa menghapus kemajuan pemain; versi 2 diubah seperti normalizeFarm()."""
+    f = data.setdefault('farm', {})
+    f.setdefault('day', 1); f.setdefault('clock', 0); f.setdefault('kav', None)
+    seeds, harvest = f.setdefault('seeds', {}), f.setdefault('harvest', {})
+    for crop in FARM_CROPS:
+        seeds[crop] = max(0, int(seeds.get(crop) or 0)); harvest[crop] = max(0, int(harvest.get(crop) or 0))
+    f['lands'] = ([bool(v) for v in f.get('lands') or []] + [False] * 9)[:9]
+    inv = f.setdefault('inv', {})
+    if not isinstance(f.get('items'), list):
+        f['items'] = []
+        for i, p in enumerate(f.get('plots') or []):
+            land = i // 9
+            if isinstance(p, dict) and f['lands'][land] and (p.get('tilled') or p.get('crop')):
+                f['items'].append({'k': 'petak', 'x': land % 3 * SECTOR + 1 + i % 3 * 2, 'z': land // 3 * SECTOR + 1 + i % 9 // 3 * 2, 'r': 0,
+                                   'crop': p.get('crop') if p.get('crop') in FARM_CROPS else None, 'watered': bool(p.get('watered')), 'growth': p.get('growth') or 0})
+        for k, n in (f.get('buildings') or {}).items():
+            if k in FARM_ITEMS and n:
+                inv[k] = inv.get(k, 0) + 1
+    f.pop('plots', None); f.pop('buildings', None); f['version'] = 3
+    return f
+
+
 # ---------------------------------------------------------------- SQLite
 class Store:
     def __init__(self, path):
@@ -43,7 +74,13 @@ class Store:
                                              PRIMARY KEY (zone, key));
           CREATE TABLE IF NOT EXISTS recent (zone TEXT PRIMARY KEY, keys TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS farm_listings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, seller_key TEXT NOT NULL, seller_name TEXT NOT NULL,
+            kind TEXT NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL, price INTEGER NOT NULL, created INTEGER NOT NULL
+          );
         ''')
+        if 'extra' not in [r[1] for r in self.db.execute('PRAGMA table_info(farm_listings)')]:
+            self.db.execute("ALTER TABLE farm_listings ADD COLUMN extra TEXT NOT NULL DEFAULT ''")  # isi 9 petak lahan yang dijual
         self.db.commit()
 
     def player(self, key):
@@ -117,6 +154,7 @@ class Store:
     def delete_player(self, key):
         self.db.execute('DELETE FROM players WHERE key=?', (key,))
         self.db.execute('DELETE FROM scores WHERE key=?', (key,))
+        self.db.execute('DELETE FROM farm_listings WHERE seller_key=?', (key,))
         self.db.commit()
 
     def recent(self, zone):
@@ -127,6 +165,38 @@ class Store:
         keys = [k for k in self.recent(zone) if k != qkey] + [qkey]
         self.db.execute('INSERT INTO recent(zone,keys) VALUES(?,?) ON CONFLICT(zone) DO UPDATE SET keys=excluded.keys',
                         (zone, json.dumps(keys[-keep:])))
+        self.db.commit()
+
+    def farm_market(self):
+        out = []
+        for r in self.db.execute('SELECT id,seller_key,seller_name,kind,item,qty,price,extra FROM farm_listings ORDER BY created DESC LIMIT 80'):
+            moved = json.loads(r[7]) if r[3] == 'land' and r[7] else []  # barang di atas tanah yang dijual
+            out.append({'id': r[0], 'sellerKey': r[1], 'seller': r[2], 'kind': r[3], 'item': r[4], 'qty': r[5], 'price': r[6],
+                        'things': len(moved), 'plants': sum(1 for it in moved if it.get('crop'))})
+        return out
+
+    def farm_players(self):
+        out = []
+        for key, name, data in self.db.execute('SELECT key, name, data FROM players'):
+            try:
+                d = json.loads(data)
+            except ValueError:
+                continue
+            if isinstance(d.get('farm'), dict) and isinstance(d['farm'].get('kav'), int):
+                out.append({'key': key, 'name': name, 'farm': farm_data(d)})
+        return out
+
+    def farm_listing(self, listing_id):
+        r = self.db.execute('SELECT seller_key,seller_name,kind,item,qty,price,extra FROM farm_listings WHERE id=?', (listing_id,)).fetchone()
+        return r and {'seller_key': r[0], 'seller_name': r[1], 'kind': r[2], 'item': r[3], 'qty': r[4], 'price': r[5], 'plots': json.loads(r[6]) if r[6] else None}
+
+    def add_farm_listing(self, seller_key, seller_name, kind, item, qty, price, plots=None):
+        self.db.execute('INSERT INTO farm_listings(seller_key,seller_name,kind,item,qty,price,created,extra) VALUES(?,?,?,?,?,?,?,?)',
+                        (seller_key, seller_name, kind, item, qty, price, now_ms(), json.dumps(plots) if plots else ''))
+        self.db.commit()
+
+    def remove_farm_listing(self, listing_id):
+        self.db.execute('DELETE FROM farm_listings WHERE id=?', (listing_id,))
         self.db.commit()
 
 
@@ -382,7 +452,7 @@ async def reveal(r):
 # Jam dunia dipegang server supaya semua perangkat siang/malam bersamaan.
 world = {'phase': 'day', 'start': 0, 'ends': 0, 'safe': None, 'safeEnds': 0, 'rest': 0, 'hold': False}
 boss = {'isl': set(), 't': 0}  # pulau tempat Raja Zombie hidup (dari laporan tuan rumah zombie)
-island_of = lambda z: 'kota' if float(z or 0) > 165 else 'balok'  # sama dengan islandOf() di world.js
+island_of = lambda z: 'kebun' if float(z or 0) < -200 else 'kota' if float(z or 0) > 165 else 'balok'  # sama dengan islandOf() di world.js
 ZONE_IDS = ['kebun', 'warna', 'hewan', 'pola', 'bentuk', 'ikan', 'musik', 'kembar', 'ukuran', 'rasa', 'tulis', 'mtk', 'gambar', 'puzzle', 'huruf', 'angka', 'iqro']
 zhost = {'id': None}
 
@@ -463,6 +533,105 @@ async def elect_zhost():
         await broadcast({'t': 'zhost', 'id': new})
 
 
+async def send_farm_market(c, msg=None):
+    listings = store.farm_market()
+    await c.send({'t': 'farmMarket', 'list': [{**x, 'mine': x['sellerKey'] == c.key} for x in listings], 'msg': msg})
+
+
+async def broadcast_farm_market(msg=None):
+    for p in players():
+        await send_farm_market(p, msg)
+
+
+async def sync_farm_player(key, delta, msg=None):
+    """Kirim perubahan saja (bukan salinan penuh): kemajuan kebun yang belum sempat disimpan perangkat tidak tertimpa."""
+    for p in players():
+        if p.key == key:
+            await p.send({'t': 'farmSync', 'delta': delta, 'msg': msg})
+
+
+def as_int(v, lo, hi, default):
+    try:
+        return max(lo, min(hi, int(v)))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+# Pasar pemain: hasil panen, tanah (beserta barang & tanaman di atasnya), dan barang dari tas. Aturan sama dengan js/farm-state.js.
+def farm_take(f, kind, item, qty):
+    """Keluarkan barang dari kebun penjual. Hasil (delta, isi tanah) atau pesan galat."""
+    if kind == 'produce':
+        if item not in FARM_CROPS or f['harvest'][item] < qty:
+            return 'Hasil panenmu belum cukup.'
+        f['harvest'][item] -= qty
+        return {'harvest': {item: -qty}}, None
+    if kind == 'land':
+        i = as_int(item, 0, 8, -1)
+        if i < 0 or not f['lands'][i]:
+            return 'Tanah itu bukan milikmu.'
+        ox, oz = i % 3 * SECTOR, i // 3 * SECTOR
+        moved = [{**it, 'x': int(it['x']) - ox, 'z': int(it['z']) - oz} for it in f['items'] if sector_of(it) == i]
+        f['items'] = [it for it in f['items'] if sector_of(it) != i]; f['lands'][i] = False
+        return {'landOut': i}, moved
+    if kind in ('item', 'building'):
+        if item not in FARM_ITEMS or not f['inv'].get(item):
+            return 'Barang itu tidak ada di tasmu. Simpan dulu barangnya ke tas.'
+        f['inv'][item] -= 1
+        if not f['inv'][item]:
+            del f['inv'][item]
+        return {'inv': {item: -1}}, None
+    return 'Barang tidak dikenal.'
+
+
+def farm_give(f, kind, item, qty, moved):
+    """Masukkan barang ke kebun pembeli (atau kembali ke penjual saat batal). Hasil delta atau pesan galat."""
+    if kind == 'produce':
+        f['harvest'][item] += qty
+        return {'harvest': {item: qty}}
+    if kind == 'land':
+        i = next((j for j in LAND_ORDER if not f['lands'][j]), None)
+        if i is None:
+            return 'Semua 9 tanah di kavlingmu sudah terisi.'
+        f['lands'][i] = True
+        moved = [it for it in (moved or []) if isinstance(it, dict) and it.get('k') in FARM_ITEMS]
+        f['items'] += [{**it, 'x': int(it['x']) + i % 3 * SECTOR, 'z': int(it['z']) + i // 3 * SECTOR} for it in moved]
+        return {'landIn': moved}
+    if kind in ('item', 'building'):
+        f['inv'][item] = f['inv'].get(item, 0) + 1
+        return {'inv': {item: 1}}
+    return 'Barang tidak dikenal.'
+
+
+# Kavling: server membagi satu kavling per pemain, lalu menyiarkan barang kebun supaya kebun teman terlihat.
+farm_pub = {}  # key -> json barang terakhir yang disiarkan (agar simpan berkala tanpa perubahan tidak disiarkan ulang)
+
+
+def farm_plot(key, name, f):
+    return {'kav': f.get('kav'), 'key': key, 'name': name, 'lands': f['lands'], 'items': f['items']}
+
+
+def assign_kav(key):
+    rec = store.player(key); f = farm_data(rec['data'])
+    used = {p['farm'].get('kav') for p in store.farm_players() if p['key'] != key}
+    if isinstance(f.get('kav'), int) and 0 <= f['kav'] < FARM_KAVS and f['kav'] not in used:
+        return rec, f
+    free = [k for k in range(FARM_KAVS) if k not in used]
+    if free:
+        f['kav'] = free[0]; rec['data']['updated'] = now_ms(); store.save_player(key, rec['name'], rec['data'])
+    return rec, f
+
+
+async def farm_publish(key, name, f, skip=None):
+    if not isinstance(f.get('kav'), int):
+        return
+    # pertumbuhan dibulatkan per 15 detik: simpan berkala tidak menyiarkan ulang kalau tidak ada yang terlihat berubah
+    pub = json.dumps([f['lands'], [[it.get(k) for k in ('k', 'x', 'z', 'r', 'crop', 'watered')] + [int(it.get('growth') or 0) // 15] for it in f['items']]], separators=(',', ':'))
+    if farm_pub.get(key) == pub:
+        return
+    farm_pub[key] = pub
+    await broadcast({'t': 'farmPlot', 'plot': farm_plot(key, name, f)}, skip=skip)
+
+
 # ---------------------------------------------------------------- pesan dari pemain
 async def on_message(c, m):
     t = m.get('t')
@@ -510,11 +679,72 @@ async def on_message(c, m):
     if t == 'save':
         data = m.get('data')
         if isinstance(data, dict):
+            if isinstance(data.get('farm'), dict):
+                old = (store.player(c.key) or {}).get('data', {}).get('farm') or {}
+                data['farm']['kav'] = old.get('kav') if isinstance(old.get('kav'), int) else None  # kavling dibagi server, bukan perangkat
             store.save_player(c.key, c.name, data)
+            if isinstance(data.get('farm'), dict) and isinstance(data['farm'].get('kav'), int):
+                await farm_publish(c.key, c.name, farm_data(data), skip=c)
             av, st = data.get('avatar') or {}, data.get('stars', 0)
             if av != c.avatar or st != c.stars:
                 c.avatar, c.stars = av, st
                 await broadcast({'t': 'pinfo', 'id': c.id, 'avatar': av, 'stars': st}, skip=c)
+    elif t == 'farmHello':  # tiba di Pulau Kebun: pastikan punya kavling, kirim semua kebun pemain
+        rec, f = assign_kav(c.key)
+        await c.send({'t': 'farmWorld', 'kav': f.get('kav'), 'plots': [farm_plot(p['key'], p['name'], p['farm']) for p in store.farm_players()],
+                      'msg': None if isinstance(f.get('kav'), int) else 'Semua kavling sudah terisi. Minta orang tua menghapus pemain yang tidak dipakai.'})
+        await farm_publish(c.key, c.name, f, skip=c)
+    elif t == 'farmMarket':
+        await send_farm_market(c)
+    elif t == 'farmList':
+        current = m.get('data')
+        if isinstance(current, dict):
+            current['updated'] = now_ms(); store.save_player(c.key, c.name, current)
+        rec = store.player(c.key); data = rec['data']; f = farm_data(data)
+        kind, item = str(m.get('kind') or ''), str(m.get('item') or '')
+        qty, price = as_int(m.get('qty'), 1, 99, 1) if kind == 'produce' else 1, as_int(m.get('price'), 1, 9999, 1)
+        out = farm_take(f, kind, item, qty)
+        if isinstance(out, str):
+            return await send_farm_market(c, out)
+        delta, plots = out
+        data['updated'] = now_ms(); store.save_player(c.key, c.name, data)
+        store.add_farm_listing(c.key, c.name, kind, item, qty, price, plots)
+        await sync_farm_player(c.key, delta, 'Barang sudah dipasang di pasar pemain.')
+        await broadcast_farm_market()
+    elif t == 'farmCancel':
+        listing_id = as_int(m.get('id'), 0, 2**62, 0)
+        row = store.farm_listing(listing_id)
+        if not row or row['seller_key'] != c.key:
+            return await send_farm_market(c, 'Iklan itu bukan milikmu.')
+        rec = store.player(c.key); data = rec['data']; f = farm_data(data)
+        delta = farm_give(f, row['kind'], row['item'], row['qty'], row['plots'])
+        if isinstance(delta, str):
+            return await send_farm_market(c, delta)
+        data['updated'] = now_ms(); store.save_player(c.key, c.name, data); store.remove_farm_listing(listing_id)
+        await sync_farm_player(c.key, delta, 'Iklan dibatalkan dan barang dikembalikan.')
+        await broadcast_farm_market()
+    elif t == 'farmBuy':
+        listing_id = as_int(m.get('id'), 0, 2**62, 0)
+        row = store.farm_listing(listing_id)
+        if not row:
+            return await send_farm_market(c, 'Barang itu baru saja terjual.')
+        seller_key, price = row['seller_key'], row['price']
+        if seller_key == c.key:
+            return await send_farm_market(c, 'Gunakan tombol Batalkan untuk barangmu sendiri.')
+        buyer, seller = store.player(c.key), store.player(seller_key)
+        if not buyer or not seller or int(buyer['data'].get('coins') or 0) < price:
+            return await send_farm_market(c, 'Koinmu belum cukup.')
+        delta = farm_give(farm_data(buyer['data']), row['kind'], row['item'], row['qty'], row['plots'])
+        if isinstance(delta, str):
+            return await send_farm_market(c, delta)
+        delta['coins'] = -price
+        buyer['data']['coins'] = int(buyer['data'].get('coins') or 0) - price
+        seller['data']['coins'] = int(seller['data'].get('coins') or 0) + price
+        buyer['data']['updated'] = seller['data']['updated'] = now_ms()
+        store.save_player(c.key, buyer['name'], buyer['data']); store.save_player(seller_key, seller['name'], seller['data']); store.remove_farm_listing(listing_id)
+        await sync_farm_player(c.key, delta, f"Berhasil membeli dari {row['seller_name']}.")
+        await sync_farm_player(seller_key, {'coins': price}, f'Barangmu terjual {price} koin!')
+        await broadcast_farm_market()
     elif t == 'move':
         was_paused = (c.pos or {}).get('p') == 99
         c.pos = {k: m.get(k, 0) for k in ('x', 'z', 'y', 'f', 'm', 'p', 'pc', 'fm')}  # fm: gerakan bela diri terakhir  # p: 1 terjun, 2 sayap, 3 berenang, 4-9 kendaraan; pc: ada penumpang

@@ -55,15 +55,18 @@ export function groundAt(x, z, y, pad = 0.22) {
 export const WATER_Y = -0.5; // tinggi kaki saat berenang (badan tenggelam sampai dada)
 export const SWIM = { x: -86, z: 30, r: 26 }; // laut tempat berenang: sekitar dermaga
 export const inSwim = (x, z) => Math.hypot(x - SWIM.x, z - SWIM.z) < SWIM.r;
-// dua pulau: Pulau Balok (bulat, pusat 0,0) dan Pulau Kota (kotak, di utara)
+// Tiga pulau: Pulau Balok (0,0), Pulau Kota di utara, Pulau Kebun di selatan.
 // Pulau Kota berbentuk superelips (kotak bersudut membulat): |x|^5 + |z|^5 = 118^5
 export const CITY = { x: 0, z: 330, half: 110, land: 118, n: 5 };
 export const cityR = (x, z) => Math.pow(Math.abs(x - CITY.x) ** CITY.n + Math.abs(z - CITY.z) ** CITY.n, 1 / CITY.n);
 export const inCity = (x, z, m = 0) => cityR(x, z) < CITY.land - m;
-export const islandOf = (x, z) => (z > 165 ? 'kota' : 'balok');
-export const onLand = (x, z, m = 0) => (islandOf(x, z) === 'kota' ? inCity(x, z, m) : Math.hypot(x, z) < K.edgeR(x, z) - m);
+export const FARM = { x: 0, z: -400, r: 120 };
+export const inFarm = (x, z, m = 0) => Math.hypot(x - FARM.x, z - FARM.z) < FARM.r - m;
+export const islandOf = (x, z) => (z < -200 ? 'kebun' : z > 165 ? 'kota' : 'balok');
+export const onLand = (x, z, m = 0) => (islandOf(x, z) === 'kebun' ? inFarm(x, z, m) : islandOf(x, z) === 'kota' ? inCity(x, z, m) : Math.hypot(x, z) < K.edgeR(x, z) - m);
 // tarik titik kembali ke daratan pulau terdekat (batas pantai)
 export function clampLand(p, m = 2.2) {
+  if (islandOf(p.x, p.z) === 'kebun') { const r = Math.hypot(p.x - FARM.x, p.z - FARM.z), l = FARM.r - m; if (r > l) { p.x = FARM.x + (p.x - FARM.x) * l / r; p.z = FARM.z + (p.z - FARM.z) * l / r; } return; }
   if (islandOf(p.x, p.z) === 'kota') { const r = cityR(p.x, p.z), l = CITY.land - m; if (r > l) { p.x = CITY.x + (p.x - CITY.x) * l / r; p.z = CITY.z + (p.z - CITY.z) * l / r; } return; }
   const d = Math.hypot(p.x, p.z), lim = K.edgeR(p.x, p.z) - m; if (d > lim) { p.x *= lim / d; p.z *= lim / d; }
 }
@@ -907,7 +910,7 @@ function nameTex(name, role) {
     q.font = `800 40px ${K.FONT}`; q.fillText(name, 160, 38); q.font = `700 24px ${K.FONT}`; q.fillStyle = '#5b6b8c'; q.fillText(role || '', 160, 72);
   });
 }
-function addNpc(o) {
+export function addNpc(o) {
   const skin = o.skin || pick(['#f6d2b4', '#e3ac83', '#b97a52']);
   const ch = K.makeCharacter({ shirt: o.shirt, pants: o.pants, skin, hair: o.hair || '#3b2a20' });
   ch.skinColor = skin; if (o.girl) ch.setGirl(true);

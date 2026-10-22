@@ -82,6 +82,28 @@ KAMERA & KONTROL (seperti game PUBG)
 - Laptop: W A S D / panah untuk berjalan, spasi untuk lompat, Q/E memutar,
   F / Enter untuk Masuk.
 
+PULAU KEBUN — BERKEBUN, MEMBANGUN, DAN BERDAGANG (seperti Roblox)
+- Buka peta di Pulau Balok, pilih "Perahu Kebun", lalu ketuk
+  "Berlayar ke Pulau Kebun". Perjalanan gratis; perahu juga bisa untuk pulang.
+- Setiap pemain mendapat kavling sendiri di sekeliling alun-alun desa.
+  Kebun teman juga terlihat dan bisa dikunjungi.
+- Temui Pak Lurah di alun-alun untuk membeli tanah di kavlingmu. Ia juga
+  bisa mengantarmu ke kavling.
+- Tekan 🔨 Bangun di bawah layar, pilih barang (petak tanam, jalan, pagar,
+  bunga, pohon, bangku, lampu, ayunan, kolam, sumur, gudang, rumah), jalan
+  atau ketuk tanah untuk memilih tempat, lalu tekan Taruh. Hijau = boleh,
+  merah = tidak boleh. 🔄 memutar, 📦 Simpan memasukkan barang ke tas.
+- Berkebun tanpa memilih alat: dekati petak, lalu tombol Tanam, Siram, dan
+  Panen muncul sendiri (atau tekan F). Bibit dibeli di Bu Tini.
+- Bangun rumah, lalu dekati rumah dan tekan Tidur: tanaman yang sudah
+  disiram tumbuh satu hari.
+- Bu Mira di pasar membeli hasil panen dan menjual hasil panen. Pasar Pemain:
+  jual/beli hasil panen, tanah beserta semua isinya, atau barang di tas
+  dengan pemain lain. Barang di tas juga bisa dijual ke Pak Darto setengah
+  harga.
+- Saat malam zombie tetap datang. Lingkaran hijau di Dermaga dan Alun-alun
+  adalah zona aman. Warga pulang dan toko tutup sampai pagi.
+
 17 TEMPAT BERMAIN
 Kebun Hitung (berhitung), Rumah Warna (warna & ukuran), Kandang Hewan
 (nama, bunyi, huruf awal), Menara Pola (pola), Taman Bentuk (bentuk),
