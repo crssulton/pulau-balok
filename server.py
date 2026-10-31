@@ -226,10 +226,11 @@ class Client:
         self.voice = False
         self.closed = False
         self.down = False  # kehabisan nyawa (menonton)
+        self.v2 = False  # klien engine v2 (folder v2/): tidak menjalankan zombie
 
     def pub(self):
         return {'id': self.id, 'name': self.name, 'avatar': self.avatar, 'stars': self.stars, 'pos': self.pos,
-                'zone': self.zone, 'voice': self.voice, 'secure': self.secure, 'down': self.down}
+                'zone': self.zone, 'voice': self.voice, 'secure': self.secure, 'down': self.down, 'v2': self.v2}
 
     async def send(self, msg):
         if self.closed:
@@ -525,8 +526,9 @@ async def world_loop():
 async def elect_zhost():
     """Satu perangkat menjalankan simulasi zombie untuk semua (yang paling lama tersambung)."""
     # utamakan perangkat yang sedang aktif bermain (bukan jeda / layar mati, kode pose 99)
-    act = sorted(c.id for c in players() if (c.pos or {}).get('p') != 99)
-    ps = act or sorted(c.id for c in players())
+    # klien v2 belum punya zombie, jadi tidak pernah dipilih menjadi tuan rumah
+    act = sorted(c.id for c in players() if (c.pos or {}).get('p') != 99 and not c.v2)
+    ps = act or sorted(c.id for c in players() if not c.v2)
     new = ps[0] if ps else None
     if new != zhost['id']:
         zhost['id'] = new
@@ -632,6 +634,29 @@ async def farm_publish(key, name, f, skip=None):
     await broadcast({'t': 'farmPlot', 'plot': farm_plot(key, name, f)}, skip=skip)
 
 
+# Bangunan Pulau Kebun v2 (data['build2']): disiarkan supaya bangunan teman terlihat langsung.
+build_pub = {}  # key -> json balok terakhir yang disiarkan
+
+
+def build_plot(key, name, data):
+    b, kav = data.get('build2'), (data.get('farm') or {}).get('kav')
+    if not isinstance(b, dict) or not isinstance(b.get('blocks'), list):
+        return None
+    # v2: balok bebas di seluruh pulau (koordinat relatif pusat pulau); kav hanya titik pulang & migrasi kebun lama
+    return {'key': key, 'name': name, 'kav': kav if isinstance(kav, int) else None, 'v': b.get('v', 1), 'blocks': b['blocks']}
+
+
+async def build_publish(key, name, data, skip=None):
+    plot = build_plot(key, name, data)
+    if plot is None:
+        return
+    pub = json.dumps(plot['blocks'], separators=(',', ':'))
+    if build_pub.get(key) == pub:
+        return
+    build_pub[key] = pub
+    await broadcast({'t': 'buildPlot', 'plot': plot}, skip=skip)
+
+
 # ---------------------------------------------------------------- pesan dari pemain
 async def on_message(c, m):
     t = m.get('t')
@@ -656,11 +681,13 @@ async def on_message(c, m):
             rec = {'name': name, 'data': data}
         else:
             local = m.get('data')
-            # simpanan lokal yang lebih baru (main saat server mati) ikut dipakai
-            if isinstance(local, dict) and int(local.get('updated') or 0) > int(rec['data'].get('updated') or 0):
+            # simpanan lokal yang lebih baru (main saat server mati) ikut dipakai;
+            # data "pemain baru" untuk nama yang sudah ada tidak pernah menimpa kemajuan yang tersimpan
+            if not m.get('create') and isinstance(local, dict) and int(local.get('updated') or 0) > int(rec['data'].get('updated') or 0):
                 store.save_player(key, rec['name'], local)
                 rec['data'] = local
         c.key, c.name = key, rec['name']
+        c.v2 = bool(m.get('v2'))
         c.avatar = rec['data'].get('avatar') or {}
         c.stars = rec['data'].get('stars', 0)
         await c.send({'t': 'welcome', 'id': c.id, 'name': c.name, 'data': rec['data'],
@@ -685,6 +712,7 @@ async def on_message(c, m):
             store.save_player(c.key, c.name, data)
             if isinstance(data.get('farm'), dict) and isinstance(data['farm'].get('kav'), int):
                 await farm_publish(c.key, c.name, farm_data(data), skip=c)
+            await build_publish(c.key, c.name, data, skip=c)
             av, st = data.get('avatar') or {}, data.get('stars', 0)
             if av != c.avatar or st != c.stars:
                 c.avatar, c.stars = av, st
@@ -694,6 +722,22 @@ async def on_message(c, m):
         await c.send({'t': 'farmWorld', 'kav': f.get('kav'), 'plots': [farm_plot(p['key'], p['name'], p['farm']) for p in store.farm_players()],
                       'msg': None if isinstance(f.get('kav'), int) else 'Semua kavling sudah terisi. Minta orang tua menghapus pemain yang tidak dipakai.'})
         await farm_publish(c.key, c.name, f, skip=c)
+    elif t == 'buildHello':  # v2: tiba di Pulau Kebun, kirim kavling sendiri + bangunan semua pemain
+        rec, f = assign_kav(c.key)
+        plots = []
+        for key, name, raw in store.db.execute('SELECT key, name, data FROM players'):
+            try:
+                d = json.loads(raw)
+            except ValueError:
+                continue
+            plot = build_plot(key, name, d)
+            if plot is None and isinstance(d.get('farm'), dict) and isinstance(d['farm'].get('kav'), int):
+                f = farm_data(d)  # belum pernah membuka v2: kirim kebun lama supaya ditampilkan sebagai balok
+                plot = {'key': key, 'name': name, 'kav': f['kav'], 'blocks': None, 'items': f['items']}
+            if plot is not None:
+                plots.append(plot)
+        await c.send({'t': 'buildWorld', 'kav': f.get('kav'), 'plots': plots,
+                      'msg': None if isinstance(f.get('kav'), int) else 'Semua kavling sudah terisi. Minta orang tua menghapus pemain yang tidak dipakai.'})
     elif t == 'farmMarket':
         await send_farm_market(c)
     elif t == 'farmList':

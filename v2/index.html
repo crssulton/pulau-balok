@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#3f9df3">
+<title>Pulau Balok — Pulau Kebun (versi baru)</title>
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<style>
+@font-face { font-family: 'Baloo 2'; font-weight: 600; src: url(/fonts/baloo-2-latin-600-normal.woff2) format('woff2'); font-display: swap; }
+@font-face { font-family: 'Baloo 2'; font-weight: 800; src: url(/fonts/baloo-2-latin-800-normal.woff2) format('woff2'); font-display: swap; }
+:root {
+  --ink: #1d2b53; --paper: #fffdf6; --sun: #ffd23a; --sun-d: #e3ab12; --leaf: #3fb25a; --leaf-d: #2b8a42;
+  --sky: #3a9df5; --sky-d: #2373c4; --rose: #ff6b81; --rose-d: #d94a62; --shadow: 0 6px 0 rgba(29,43,83,.22);
+  --safe-b: env(safe-area-inset-bottom, 0px); --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px); --safe-t: env(safe-area-inset-top, 0px);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #8fd3ff; font-family: 'Baloo 2', system-ui, sans-serif; color: var(--ink); user-select: none; -webkit-user-select: none; touch-action: none; }
+canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+.hidden { display: none !important; }
+
+/* tombol tebal ala game anak */
+.btn { background: var(--paper); border-radius: 18px; box-shadow: var(--shadow); font-weight: 800; padding: 6px 16px; transition: transform .08s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn:active { transform: translateY(3px); box-shadow: 0 3px 0 rgba(29,43,83,.22); }
+.btn.sun { background: var(--sun); box-shadow: 0 6px 0 var(--sun-d); }
+.btn.leaf { background: var(--leaf); color: #fff; box-shadow: 0 6px 0 var(--leaf-d); }
+.btn.sky { background: var(--sky); color: #fff; box-shadow: 0 6px 0 var(--sky-d); }
+.btn.rose { background: var(--rose); color: #fff; box-shadow: 0 6px 0 var(--rose-d); }
+.icon { width: 58px; height: 58px; border-radius: 18px; font-size: 28px; padding: 0; }
+
+/* layar masuk */
+.screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 20px; z-index: 30;
+  background: radial-gradient(ellipse at 50% 20%, #c8ecff 0%, #7cc8f8 55%, #3a9df5 100%); text-align: center; }
+.title { font-size: clamp(40px, 9vw, 76px); font-weight: 800; color: #fff; line-height: .95; text-shadow: 0 6px 0 rgba(29,43,83,.3); margin: 0; }
+.subtitle { font-size: clamp(18px, 3.4vw, 26px); font-weight: 800; color: var(--ink); background: var(--sun); padding: 2px 18px; border-radius: 999px; box-shadow: var(--shadow); }
+.card { background: var(--paper); border-radius: 26px; padding: 16px; box-shadow: 0 10px 0 rgba(29,43,83,.18); width: min(560px, 94vw); max-height: 60vh; overflow: auto; }
+#names { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+#names .btn { font-size: 22px; padding: 8px 20px; }
+.row { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; }
+input[type=text] { font: inherit; font-size: 22px; font-weight: 800; border-radius: 16px; border: 3px solid #cfd8ea; padding: 6px 14px; width: 220px; color: var(--ink); outline: none; }
+input[type=text]:focus { border-color: var(--sky); }
+.small { font-size: 15px; opacity: .8; }
+#netStatus { font-weight: 800; color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.2); }
+
+/* HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#hud > * { pointer-events: auto; }
+.tl { position: absolute; top: calc(12px + var(--safe-t)); left: calc(12px + var(--safe-l)); display: flex; gap: 10px; align-items: center; }
+.tr { position: absolute; top: calc(12px + var(--safe-t)); right: calc(12px + var(--safe-r)); display: flex; gap: 10px; }
+.chip { background: rgba(255,253,246,.92); border-radius: 999px; padding: 4px 14px; font-weight: 800; font-size: 18px; box-shadow: var(--shadow); white-space: nowrap; }
+#stick { position: absolute; left: calc(26px + var(--safe-l)); bottom: calc(26px + var(--safe-b)); width: 150px; height: 150px; border-radius: 50%;
+  background: rgba(255,255,255,.28); border: 4px solid rgba(255,255,255,.75); touch-action: none; }
+#stick .knob { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; background: var(--sun); box-shadow: 0 5px 0 var(--sun-d); pointer-events: none; }
+body:not(.touch) #stick { display: none; }
+.br { position: absolute; right: calc(20px + var(--safe-r)); bottom: calc(22px + var(--safe-b)); display: flex; gap: 14px; align-items: flex-end; }
+#jumpBtn { width: 86px; height: 86px; border-radius: 50%; font-size: 40px; }
+#buildBtn { height: 70px; font-size: 24px; padding: 0 22px; border-radius: 22px; }
+body.building:not(.flying) #jumpBtn { display: none; }
+#downBtn { width: 86px; height: 86px; border-radius: 50%; font-size: 40px; }
+body:not(.touch) #downBtn { display: none !important; }
+.swatch.custom { position: relative; overflow: hidden; background: conic-gradient(#e8434b, #ffd23a, #3fb25a, #3a9df5, #9a62e0, #e8434b); }
+.swatch.custom input { position: absolute; inset: -8px; width: 60px; height: 60px; opacity: 0; cursor: pointer; }
+body:not(.touch) #jumpBtn { display: none; }
+#prompt { position: absolute; left: 50%; bottom: calc(130px + var(--safe-b)); transform: translateX(-50%); font-size: 22px; padding: 8px 22px; }
+#bubble { position: absolute; left: 50%; top: calc(80px + var(--safe-t)); transform: translateX(-50%); max-width: min(560px, 90vw); background: var(--paper); border-radius: 22px; padding: 10px 20px; font-size: 21px; font-weight: 800; box-shadow: var(--shadow); text-align: center; }
+#bubble b { color: var(--sky-d); display: block; font-size: 16px; }
+#toast { position: fixed; left: 50%; top: 22%; transform: translate(-50%, -10px); background: rgba(29,43,83,.9); color: #fff; font-weight: 800; font-size: 20px; padding: 8px 22px; border-radius: 999px; opacity: 0; transition: .25s; pointer-events: none; z-index: 40; text-align: center; max-width: 90vw; }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+#fps { position: fixed; left: 8px; bottom: 6px; font: 12px/1.2 monospace; color: #fff; text-shadow: 0 1px 2px #000; z-index: 20; pointer-events: none; white-space: pre; }
+
+/* bilah Mode Bangun */
+#doneBtn { position: absolute; right: 10px; top: -58px; height: 48px; font-size: 19px; box-shadow: 0 5px 0 var(--leaf-d); }
+#buildBar { position: absolute; left: 50%; bottom: calc(10px + var(--safe-b)); transform: translateX(-50%); width: min(980px, calc(100vw - 20px)); background: rgba(255,253,246,.95); border-radius: 24px; padding: 8px 10px; box-shadow: 0 8px 0 rgba(29,43,83,.2); display: flex; flex-direction: column; gap: 6px; }
+.strip { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px; }
+.strip::-webkit-scrollbar { display: none; }
+.shape { flex: 0 0 auto; width: 62px; height: 60px; border-radius: 16px; background: #eef2fa; font-size: 26px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.shape span { font-size: 11px; font-weight: 800; margin-top: 3px; white-space: nowrap; }
+.shape.on { background: var(--sun); box-shadow: inset 0 -4px 0 var(--sun-d); }
+.swatch { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 12px; border: 3px solid rgba(29,43,83,.15); }
+.swatch.on { border: 4px solid var(--ink); transform: scale(1.08); }
+.tools { display: flex; gap: 6px; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.tool { flex: 0 0 auto; height: 46px; border-radius: 14px; background: #eef2fa; font-weight: 800; font-size: 17px; padding: 0 12px; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.tool.on { background: var(--sky); color: #fff; }
+.tool.done { background: var(--leaf); color: #fff; }
+body.building #stick { bottom: calc(196px + var(--safe-b)); width: 120px; height: 120px; }
+body.building .br { bottom: calc(196px + var(--safe-b)); }
+body.building #buildBtn { display: none; }
+body.building #prompt { display: none; }
+
+/* panel pengaturan & istirahat */
+.panel { position: fixed; inset: 0; background: rgba(29,43,83,.45); display: flex; align-items: center; justify-content: center; z-index: 35; }
+.panel .card { display: flex; flex-direction: column; gap: 12px; align-items: stretch; text-align: left; }
+.panel h2 { margin: 0; font-size: 28px; }
+.seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg .tool { flex: 1 1 auto; justify-content: center; }
+@media (max-height: 520px) {
+  .shape { width: 54px; height: 50px; font-size: 22px; } .swatch { width: 34px; height: 34px; } .tool { height: 40px; font-size: 15px; }
+  body.building #stick, body.building .br { bottom: calc(168px + var(--safe-b)); }
+  #jumpBtn { width: 72px; height: 72px; } #stick { width: 128px; height: 128px; }
+}
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+
+<div id="loading" class="screen"><h1 class="title">Pulau Balok</h1><div class="subtitle">Memuat…</div></div>
+
+<div id="login" class="screen hidden">
+  <h1 class="title">Pulau Balok</h1>
+  <div class="subtitle">🌱 Pulau Kebun · bangun sesukamu!</div>
+  <div class="card">
+    <div style="font-weight:800;font-size:20px;margin-bottom:8px">Siapa yang main?</div>
+    <div id="names"><span class="small">Menghubungkan…</span></div>
+    <hr style="border:0;border-top:3px dashed #e1e6f0;margin:14px 0">
+    <div class="row">
+      <input id="newName" type="text" maxlength="16" placeholder="Nama baru" autocomplete="off" aria-label="Nama pemain baru">
+      <button class="btn" id="genderBtn" data-g="L" aria-label="Pilih laki-laki atau perempuan">👦</button>
+      <button class="btn leaf" id="createBtn">Mulai</button>
+    </div>
+  </div>
+  <div id="netStatus"></div>
+  <a class="btn" href="/" style="text-decoration:none;color:inherit">⬅️ Kembali ke game lama</a>
+</div>
+
+<div id="hud" class="hidden">
+  <div class="tl">
+    <button class="btn icon" id="backBtn" title="Kembali ke Pulau Balok" aria-label="Kembali ke Pulau Balok">🏝️</button>
+    <div class="chip" id="whoChip">—</div>
+    <div class="chip" id="countChip" title="Jumlah balok di kavlingmu">🧱 0</div>
+  </div>
+  <div class="tr">
+    <button class="btn icon" id="mapBtn" title="Peta pulau" aria-label="Peta pulau">🗺️</button>
+    <button class="btn icon" id="homeBtn" title="Ke bangunanku" aria-label="Ke bangunanku">🏡</button>
+    <button class="btn icon" id="camBtn" title="Putar kamera ke belakang" aria-label="Kamera">🎥</button>
+    <button class="btn icon" id="setBtn" title="Pengaturan" aria-label="Pengaturan">⚙️</button>
+  </div>
+  <div id="bubble" class="hidden"></div>
+  <button class="btn sun hidden" id="prompt"></button>
+  <div id="stick"><div class="knob"></div></div>
+  <div class="br">
+    <button class="btn sky hidden" id="downBtn" aria-label="Turun">⬇️</button>
+    <button class="btn sky" id="jumpBtn" aria-label="Lompat">⬆️</button>
+    <button class="btn sun" id="buildBtn">🔨 Bangun</button>
+  </div>
+  <div id="buildBar" class="hidden">
+    <div class="strip" id="shapes"></div>
+    <div class="strip" id="colors"><label class="swatch custom" title="Warna bebas" aria-label="Pilih warna bebas"><input type="color" id="colorPick" value="#ff66cc"></label></div>
+    <div class="tools">
+      <button class="tool on" data-tool="place">🧱 Taruh</button>
+      <button class="tool" data-tool="erase">🧽 Hapus</button>
+      <button class="tool" data-tool="paint">🎨 Cat</button>
+      <button class="tool" data-tool="pick">🔍 Pipet</button>
+      <button class="tool" id="brushBtn" title="Ukuran kuas">🖌️ 1×1</button>
+      <button class="tool" id="rotBtn">🔄 Putar</button>
+      <button class="tool" id="flyBtn">🕊️ Terbang</button>
+      <button class="tool" id="undoBtn">↩️ Urungkan</button>
+      <button class="tool" id="redoBtn">↪️ Ulangi</button>
+      <button class="tool done" id="doneBtn">✅ Selesai</button>
+    </div>
+  </div>
+</div>
+
+<div id="settings" class="panel hidden">
+  <div class="card">
+    <h2>⚙️ Pengaturan</h2>
+    <div><b>Kualitas gambar</b><div class="seg" id="qualSeg">
+      <button class="tool" data-q="auto">Otomatis</button><button class="tool" data-q="0">Hemat</button><button class="tool" data-q="1">Seimbang</button><button class="tool" data-q="2">Bagus</button>
+    </div></div>
+    <div><b>Kamera</b><div class="seg">
+      <button class="tool" id="followTgl">Ikut ke belakang otomatis</button>
+    </div></div>
+    <div><b>Lainnya</b><div class="seg">
+      <button class="tool" id="fpsTgl">Tampilkan FPS</button>
+      <button class="tool" id="soundTgl">Suara</button>
+    </div></div>
+    <div class="small">Komputer: WASD/panah berjalan, Spasi lompat, Shift lari, seret mouse memutar kamera, roda mouse zoom. Mode Bangun: B, 1–9 pilih bentuk, R putar, X hapus, C cat, P pipet, K ukuran kuas, T terbang (Spasi naik, Shift turun), Z urungkan, Y ulangi.</div>
+    <button class="btn leaf" id="setClose">Tutup</button>
+  </div>
+</div>
+
+<div id="map" class="panel hidden">
+  <div class="card">
+    <h2>🗺️ Mau ke mana?</h2>
+    <div id="spots" class="seg" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px"></div>
+    <button class="btn" id="mapClose">Tutup</button>
+  </div>
+</div>
+
+<div id="rest" class="panel hidden">
+  <div class="card" style="text-align:center;align-items:center">
+    <div style="font-size:64px">😴</div>
+    <h2>Waktunya istirahat!</h2>
+    <div id="restText" style="font-size:20px;font-weight:800"></div>
+    <a class="btn sun" href="/" style="text-decoration:none;color:inherit">Kembali</a>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="fps" class="hidden"></div>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
