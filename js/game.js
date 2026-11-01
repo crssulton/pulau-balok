@@ -3163,7 +3163,7 @@ function addRemote(p) {
   const pos = p.pos || { x: 0, z: 7, y: 0, f: 0, m: 0 };
   ch.root.position.set(pos.x, 0, pos.z); scene.add(ch.root);
   hitBox(1.4, 3.2, 1.2, 0, 1.6, 0, ch.root);
-  const r = { id: p.id, name: p.name, ch, tag, mic, target: { ...pos }, phase: 0, avatar: p.avatar, zone: p.zone, voice: p.voice, secure: p.secure, emote: null, down: !!p.down };
+  const r = { id: p.id, name: p.name, ch, tag, mic, target: { ...pos }, phase: 0, avatar: p.avatar, zone: p.zone, voice: p.voice, secure: p.secure, emote: null, down: !!p.down, v2: !!p.v2 }; // v2: pemain dari engine baru (belum ikut zombie)
   ch.root.visible = !r.down;
   ch.root.userData.tap = () => greet(r);
   tapRoots.push(ch.root); remotes.set(p.id, r);
@@ -3728,7 +3728,7 @@ function makeZombie(id, kindIdx, x, z) {
 function zActive() {
   const ps = [];
   if (playing && !me.down && !me.paused) ps.push(player.pos);
-  for (const r of remotes.values()) if (!r.down && r.target?.p !== P_PAUSE) ps.push(r.ch.root.position);
+  for (const r of remotes.values()) if (!r.down && !r.v2 && r.target?.p !== P_PAUSE) ps.push(r.ch.root.position);
   return ps;
 }
 // pulau dengan pemain aktif terbanyak (untuk Raja Zombie)
@@ -3764,7 +3764,7 @@ function zTargets() {
   const t = [];
   if (worldSt.rest) return t; // istirahat: zombie hanya berkeliaran
   if (playing && !me.down && !me.paused && player.y < 1.2 && !(activeZone && isSafeZone(activeZone)) && !inSafe(player.pos.x, player.pos.z)) t.push({ id: net.id, x: player.pos.x, z: player.pos.z, me: true });
-  for (const r of remotes.values()) { const p = r.ch.root.position; const rz = r.zone && zones[r.zone]; if (!r.down && r.target?.p !== P_PAUSE && p.y < 1.2 && !(rz && isSafeZone(rz)) && !inSafe(p.x, p.z)) t.push({ id: r.id, x: p.x, z: p.z }); }
+  for (const r of remotes.values()) { const p = r.ch.root.position; const rz = r.zone && zones[r.zone]; if (!r.down && !r.v2 && r.target?.p !== P_PAUSE && p.y < 1.2 && !(rz && isSafeZone(rz)) && !inSafe(p.x, p.z)) t.push({ id: r.id, x: p.x, z: p.z }); }
   return t;
 }
 function zHurtTarget(t, z, push) { if (t.me) hurtMe(z, push); else send({ t: 'zhurt', to: t.id, zid: z.id }); }

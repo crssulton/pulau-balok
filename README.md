@@ -1,6 +1,7 @@
 # Pulau Balok — catatan pengembang
 
 Game edukasi 3D bergaya balok untuk anak 4–5 tahun, berbahasa Indonesia, dimainkan bersama lewat WiFi rumah.
+**Versi baru (engine v2) ada di folder `v2/`** — dimulai dari Pulau Kebun sebagai pulau pembangun bebas; lihat `v2/README.md`.
 File ini untuk **pengembang**. Panduan untuk orang tua (cara main, fitur, aturan) ada di `BACA-SAYA.txt`.
 
 ## Menjalankan
